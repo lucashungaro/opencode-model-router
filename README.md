@@ -261,7 +261,7 @@ There are two layers, applied lowest→highest priority:
 | **Global** | `~/.config/opencode/model-router-overrides.json` | Your personal defaults across all projects |
 | **Project** | `<project>/.opencode/model-router-overrides.json` | Per-project; commit it to share one routing config with your team |
 
-The project file deep-merges over (and wins against) the global file, which in turn merges over the bundled defaults. So you can keep personal preferences globally while a committed project file unifies routing for everyone on the repo.
+The project file deep-merges over (and wins against) the global file, which in turn merges over the bundled defaults. So you can keep personal preferences globally while a committed project file unifies routing for everyone on the repo. The project file is found by searching upward from the working directory to the repo root (the nearest ancestor containing `.git`), so it is picked up even when you launch opencode from a subdirectory.
 
 ```json
 {

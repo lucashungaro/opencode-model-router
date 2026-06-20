@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import {
@@ -8,6 +8,7 @@ import {
   invalidateConfigCache,
   overridePath,
   localOverridePath,
+  findProjectOverride,
 } from "../../src/router/config";
 
 // ---------------------------------------------------------------------------
@@ -312,6 +313,98 @@ describe("loadConfig — global + project override hierarchy", () => {
     invalidateConfigCache();
     expect(loadConfig().presets.anthropic!.fast!.model).toBe(
       "anthropic/global-fast",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findProjectOverride — upward search from cwd, bounded by the project root.
+// ---------------------------------------------------------------------------
+
+describe("findProjectOverride — upward search", () => {
+  let tmpRoot: string;
+  let savedHome: string | undefined;
+  let savedUserProfile: string | undefined;
+  let savedCwd: string;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    savedHome = process.env.HOME;
+    savedUserProfile = process.env.USERPROFILE;
+    savedCwd = process.cwd();
+    tmpRoot = join(
+      tmpdir(),
+      `oc-mr-walk-${process.pid}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`,
+    );
+    mkdirSync(tmpRoot, { recursive: true });
+    // Isolate the global layer to an empty home so only the project file matters.
+    process.env.HOME = tmpRoot;
+    process.env.USERPROFILE = tmpRoot;
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    invalidateConfigCache();
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    process.chdir(savedCwd);
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = savedUserProfile;
+    try {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+    invalidateConfigCache();
+  });
+
+  function write(path: string, obj: unknown): void {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(obj), "utf-8");
+  }
+
+  it("finds the project file from a nested subdirectory", () => {
+    const project = join(tmpRoot, "repo");
+    const file = join(project, ".opencode", "model-router-overrides.json");
+    write(file, { defaultTier: "fast" });
+    mkdirSync(join(project, ".git"), { recursive: true });
+    const deep = join(project, "src", "feature", "deep");
+    mkdirSync(deep, { recursive: true });
+
+    process.chdir(deep);
+    expect(findProjectOverride()).toBe(realpathSync(file));
+  });
+
+  it("does not escape the project root (stops at .git)", () => {
+    // An override above the repo root must NOT be picked up.
+    write(join(tmpRoot, ".opencode", "model-router-overrides.json"), {
+      defaultTier: "heavy",
+    });
+    const project = join(tmpRoot, "repo");
+    mkdirSync(join(project, ".git"), { recursive: true });
+    const sub = join(project, "sub");
+    mkdirSync(sub, { recursive: true });
+
+    process.chdir(sub);
+    expect(findProjectOverride()).toBeUndefined();
+  });
+
+  it("loadConfig applies the project override when launched from a subdir", () => {
+    const project = join(tmpRoot, "repo");
+    write(join(project, ".opencode", "model-router-overrides.json"), {
+      presets: { anthropic: { fast: { model: "anthropic/from-subdir" } } },
+    });
+    mkdirSync(join(project, ".git"), { recursive: true });
+    const deep = join(project, "a", "b");
+    mkdirSync(deep, { recursive: true });
+
+    process.chdir(deep);
+    invalidateConfigCache();
+    expect(loadConfig().presets.anthropic!.fast!.model).toBe(
+      "anthropic/from-subdir",
     );
   });
 });

@@ -8,6 +8,7 @@ import {
   invalidateConfigCache,
   overridePath,
   localOverridePath,
+  findProjectOverride,
 } from "./router/config";
 import type { RouterConfig, TierConfig, Preset, ModeConfig } from "./router/config";
 import { fingerprintToolCall } from "./guard/fingerprint";
@@ -129,8 +130,12 @@ function buildRouterOutput(cfg: RouterConfig, args: string): string {
   }
   if (sub === "overrides") {
     const globalP = overridePath();
-    const localP = localOverridePath();
+    const foundLocal = findProjectOverride();
+    const localP = foundLocal ?? localOverridePath();
     const mark = (p: string) => (existsSync(p) ? "present" : "absent");
+    const localNote = foundLocal
+      ? ""
+      : ` _(create at \`${localP}\`; the project file is searched upward from the working dir to the repo root)_`;
     return [
       `# Model Router — config overrides`,
       "",
@@ -138,7 +143,7 @@ function buildRouterOutput(cfg: RouterConfig, args: string): string {
       "",
       "1. bundled `tiers.json` (defaults)",
       `2. global — \`${globalP}\` _(${mark(globalP)})_`,
-      `3. project — \`${localP}\` _(${mark(localP)})_`,
+      `3. project — \`${localP}\` _(${mark(localP)})_${localNote}`,
       "",
       `Active preset: **${cfg.activePreset}**. Run \`/tiers\` to see the effective models after merging.`,
       "",
