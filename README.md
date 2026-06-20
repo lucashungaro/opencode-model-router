@@ -250,9 +250,18 @@ Note the nested array structure. If you have other plugins, the config will look
 
 The full default configuration lives in `tiers.json` at the plugin root. There are two ways to customize it.
 
-### Recommended: overrides file (survives updates)
+### Recommended: overrides files (survive updates)
 
-Create `~/.config/opencode/model-router-overrides.json`. Anything you put there is **deep-merged** over the bundled `tiers.json` on load — you only specify the keys you want to change; everything else falls back to the defaults. This file lives in your stable opencode config dir, so it is **not** wiped when the plugin updates.
+Anything in an overrides file is **deep-merged** over the bundled `tiers.json` on load — you only specify the keys you want to change; everything else falls back to the defaults. These files live outside the cache dir, so they are **not** wiped when the plugin updates.
+
+There are two layers, applied lowest→highest priority:
+
+| Layer | Path | Scope |
+|-------|------|-------|
+| **Global** | `~/.config/opencode/model-router-overrides.json` | Your personal defaults across all projects |
+| **Project** | `<project>/.opencode/model-router-overrides.json` | Per-project; commit it to share one routing config with your team |
+
+The project file deep-merges over (and wins against) the global file, which in turn merges over the bundled defaults. So you can keep personal preferences globally while a committed project file unifies routing for everyone on the repo.
 
 ```json
 {
@@ -266,7 +275,9 @@ Create `~/.config/opencode/model-router-overrides.json`. Anything you put there 
 
 The example above changes only the `@heavy` model/variant for the `github-copilot` preset; every other tier, preset, and setting keeps its bundled value. You can also override `costRatio`, `tierCaps`, `rules`, `modes`, `enforcement`, add an entirely new preset, etc. — any top-level key from `tiers.json`.
 
-Merge semantics: objects merge recursively; arrays and scalars are replaced wholesale (so an overridden `rules`/`whenToUse` list *replaces* the default, it does not append). If the file is missing, malformed, or produces an invalid config, the plugin logs a `[model-router]` warning and falls back to the bundled defaults — a typo can never break startup.
+Run `/router overrides` to see both file paths, whether each exists, and the precedence order.
+
+Merge semantics: objects merge recursively; arrays and scalars are replaced wholesale (so an overridden `rules`/`whenToUse` list *replaces* the default, it does not append). If a file is missing, malformed, or produces an invalid config, the plugin logs a `[model-router]` warning and drops just that layer (keeping the others) — a typo in one file can never break startup or discard a valid file.
 
 ### Advanced: edit the bundled `tiers.json` directly
 
@@ -674,6 +685,9 @@ Advisory is the default. To change the level:
 | `/budget` | Show available modes and which is active |
 | `/budget <mode>` | Switch routing mode (`normal`, `budget`, `quality`, `deep`) |
 | `/annotate-plan [path]` | Annotate a plan file with `[tier:X]` tags for each step |
+| `/router overrides` | Show the global + project override file paths and merge precedence |
+| `/router enforce <off\|advisory\|enforced>` | Set delegation-enforcement mode (persisted) |
+| `/bypass [on\|off]` | Toggle the router off/on for the session |
 
 ## Plan annotation
 

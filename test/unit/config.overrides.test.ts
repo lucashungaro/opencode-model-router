@@ -7,6 +7,7 @@ import {
   loadConfig,
   invalidateConfigCache,
   overridePath,
+  localOverridePath,
 } from "../../src/router/config";
 
 // ---------------------------------------------------------------------------
@@ -179,7 +180,138 @@ describe("loadConfig — user overrides file", () => {
     const cfg = loadConfig();
     expect(cfg.presets.anthropic!.fast!.model).toBe("anthropic/claude-haiku-4-5");
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("merged config is invalid"),
+      expect.stringContaining("must be a non-empty string"),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loadConfig — global + project-local override hierarchy. HOME drives the global
+// file; process.cwd() drives the project-local file. Both are redirected to
+// temp dirs so the real environment is never touched.
+// ---------------------------------------------------------------------------
+
+describe("loadConfig — global + project override hierarchy", () => {
+  let tmpHome: string;
+  let tmpProject: string;
+  let savedHome: string | undefined;
+  let savedUserProfile: string | undefined;
+  let savedCwd: string;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    savedHome = process.env.HOME;
+    savedUserProfile = process.env.USERPROFILE;
+    savedCwd = process.cwd();
+    const stamp = `${process.pid}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
+    tmpHome = join(tmpdir(), `oc-mr-home-${stamp}`);
+    tmpProject = join(tmpdir(), `oc-mr-proj-${stamp}`);
+    mkdirSync(tmpHome, { recursive: true });
+    mkdirSync(tmpProject, { recursive: true });
+    process.env.HOME = tmpHome;
+    process.env.USERPROFILE = tmpHome;
+    process.chdir(tmpProject);
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    invalidateConfigCache();
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    process.chdir(savedCwd);
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = savedUserProfile;
+    for (const d of [tmpHome, tmpProject]) {
+      try {
+        rmSync(d, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    invalidateConfigCache();
+  });
+
+  function writeGlobal(obj: unknown): void {
+    const p = overridePath();
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, JSON.stringify(obj), "utf-8");
+  }
+
+  function writeLocal(obj: unknown): void {
+    const p = localOverridePath();
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, JSON.stringify(obj), "utf-8");
+  }
+
+  it("localOverridePath resolves to <cwd>/.opencode/model-router-overrides.json", () => {
+    expect(localOverridePath()).toBe(
+      join(process.cwd(), ".opencode", "model-router-overrides.json"),
+    );
+  });
+
+  it("applies a project-local override", () => {
+    writeLocal({
+      presets: { anthropic: { fast: { model: "anthropic/project-fast" } } },
+    });
+    invalidateConfigCache();
+    expect(loadConfig().presets.anthropic!.fast!.model).toBe(
+      "anthropic/project-fast",
+    );
+  });
+
+  it("project-local wins over global for the same key", () => {
+    writeGlobal({
+      presets: { anthropic: { fast: { model: "anthropic/global-fast" } } },
+    });
+    writeLocal({
+      presets: { anthropic: { fast: { model: "anthropic/project-fast" } } },
+    });
+    invalidateConfigCache();
+    expect(loadConfig().presets.anthropic!.fast!.model).toBe(
+      "anthropic/project-fast",
+    );
+  });
+
+  it("merges distinct keys from both layers", () => {
+    writeGlobal({
+      presets: { anthropic: { fast: { model: "anthropic/global-fast" } } },
+    });
+    writeLocal({
+      presets: { anthropic: { heavy: { model: "anthropic/project-heavy" } } },
+    });
+    invalidateConfigCache();
+    const anthropic = loadConfig().presets.anthropic!;
+    expect(anthropic.fast!.model).toBe("anthropic/global-fast");
+    expect(anthropic.heavy!.model).toBe("anthropic/project-heavy");
+  });
+
+  it("a broken global file does not discard a valid project file", () => {
+    // global makes the merged config invalid; project is fine on its own
+    writeGlobal({ presets: { anthropic: { fast: { model: 123 } } } });
+    writeLocal({
+      presets: { anthropic: { medium: { model: "anthropic/project-medium" } } },
+    });
+    invalidateConfigCache();
+    const anthropic = loadConfig().presets.anthropic!;
+    expect(anthropic.medium!.model).toBe("anthropic/project-medium");
+    // fell back to the bundled fast model (global dropped)
+    expect(anthropic.fast!.model).toBe("anthropic/claude-haiku-4-5");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("combined overrides are invalid"),
+    );
+  });
+
+  it("a broken project file keeps the valid global file", () => {
+    writeGlobal({
+      presets: { anthropic: { fast: { model: "anthropic/global-fast" } } },
+    });
+    writeLocal({ presets: { anthropic: { fast: { model: 999 } } } });
+    invalidateConfigCache();
+    expect(loadConfig().presets.anthropic!.fast!.model).toBe(
+      "anthropic/global-fast",
     );
   });
 });
