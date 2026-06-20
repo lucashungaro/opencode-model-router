@@ -375,26 +375,18 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               ) + 2;
             let safety = 0;
 
-            let producerText = "";
-            let forcing: string | null = null;
-
-            while (true) {
-              if (safety++ > safetyMax) {
-                return (
-                  `[router status: unmet] delegation stopped by the safety net after ` +
-                  `${state.totalAttempts} attempt(s).\n\n${scrubText(producerText)}`
-                );
-              }
-              const tier = state.currentTier;
-              const taskText = forcing
-                ? `${scrubText(forcing)}\n\n${args.task}`
-                : args.task;
-
+            // One produce→verify cycle: spin up a producer session at `tier`,
+            // run the task, verify the result, and clean up. Returns the gate
+            // verdict + producer text, or { ok: false } if the session could
+            // not be created. A transport/API error during the prompt is caught
+            // and surfaces as an empty artefact — counted by the ladder as
+            // exactly one failed attempt (advisory provider-failover is handled
+            // separately via the orchestrator system prompt, not here).
+            const runProducerAttempt = async (tier: string, taskText: string) => {
               const created: any = await ctx.client.session.create({});
               const producerSid: string | undefined = created?.data?.id;
-              if (!producerSid) {
-                return "[router] delegate failed: could not create a producer session.";
-              }
+              if (!producerSid) return { ok: false as const };
+
               // Compose with Layer 1: guard the plugin-created producer session.
               try {
                 sessionStore.registerProducerSession(producerSid, tier, activeCfg);
@@ -403,14 +395,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               }
 
               const model = tierModel(activeCfg, tier) ?? undefined;
-              producerText = "";
-              // Provider-failover vs quality-escalation precedence (Phase 3.3):
-              // Provider-failover is advisory only — a text chain injected into the orchestrator
-              // system prompt (buildFallbackInstructions). It is orthogonal to this runtime ladder.
-              // A transport/API error here is caught, yields an empty artefact, and is treated as
-              // exactly ONE failed attempt by the quality-escalation ladder (no provider swap, no
-              // double-counted attempt). API error => (advisory) provider failover; verification
-              // FAIL => (runtime) quality escalation.
+              let producerText = "";
               try {
                 const res: any = await ctx.client.session.prompt({
                   path: { id: producerSid },
@@ -469,8 +454,32 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                 typeof tiersForCost?.[tier]?.costRatio === "number"
                   ? tiersForCost[tier].costRatio
                   : 1;
-              state = recordAttempt(state, costRatio);
 
+              return { ok: true as const, producerSid, producerText, gateRes, costRatio };
+            };
+
+            let producerText = "";
+            let forcing: string | null = null;
+
+            while (true) {
+              if (safety++ > safetyMax) {
+                return (
+                  `[router status: unmet] delegation stopped by the safety net after ` +
+                  `${state.totalAttempts} attempt(s).\n\n${scrubText(producerText)}`
+                );
+              }
+              const taskText = forcing
+                ? `${scrubText(forcing)}\n\n${args.task}`
+                : args.task;
+
+              const attempt = await runProducerAttempt(state.currentTier, taskText);
+              if (!attempt.ok) {
+                return "[router] delegate failed: could not create a producer session.";
+              }
+              const { producerSid, gateRes, costRatio } = attempt;
+              producerText = attempt.producerText;
+
+              state = recordAttempt(state, costRatio);
               const action = nextAction(
                 state,
                 { pass: gateRes.accepted, reasons: gateRes.verdict.reasons },
@@ -478,21 +487,11 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               );
 
               if (action.action === "accept") {
-                dumpDelegateScorecard(
-                  producerSid,
-                  state,
-                  true,
-                  gateRes.verdict.method,
-                );
+                dumpDelegateScorecard(producerSid, state, true, gateRes.verdict.method);
                 return producerText + buildAcceptedSuffix(gateRes.verdict.method);
               }
               if (action.action === "give_up") {
-                dumpDelegateScorecard(
-                  producerSid,
-                  state,
-                  false,
-                  gateRes.verdict.method,
-                );
+                dumpDelegateScorecard(producerSid, state, false, gateRes.verdict.method);
                 const note = scrubText(buildForcingNote(gateRes.verdict.reasons));
                 return (
                   `[router status: unmet] The delegated result was not accepted after ` +
