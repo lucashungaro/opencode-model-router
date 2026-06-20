@@ -175,6 +175,9 @@ export function resolvePresetName(
   );
 }
 
+/** The valid enforcement-mode values, for validation. */
+const ENFORCEMENT_MODES = ["off", "advisory", "enforced"] as readonly string[];
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -340,7 +343,7 @@ function validateEnforcement(obj: Record<string, unknown>): void {
 
   if (
     enforcement.mode !== undefined &&
-    !["off", "advisory", "enforced"].includes(enforcement.mode as string)
+    !ENFORCEMENT_MODES.includes(enforcement.mode as string)
   ) {
     throw new Error(
       "tiers.json: enforcement.mode must be one of off|advisory|enforced",
@@ -365,7 +368,7 @@ function validateEnforcement(obj: Record<string, unknown>): void {
 
   if (isPlainObject(enforcement.perTier)) {
     for (const [tierName, tierMode] of Object.entries(enforcement.perTier)) {
-      if (!["off", "advisory", "enforced"].includes(tierMode as string)) {
+      if (!ENFORCEMENT_MODES.includes(tierMode as string)) {
         throw new Error(
           `tiers.json: enforcement.perTier.${tierName} must be one of off|advisory|enforced`,
         );

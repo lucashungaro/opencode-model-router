@@ -239,6 +239,67 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   // plugin lifetime (re-validate on demand via /router).
   let catalogChecked = false;
 
+  // The trajectory store is record-only debug scaffolding; its sole consumer is
+  // the session.idle dump below. Read the gate once so per-event recording is a
+  // true no-op (no map churn) unless explicitly enabled.
+  const trajectoryDebug = process.env.MODEL_ROUTER_TRAJECTORY_DEBUG === "1";
+
+  // Option (i): observe a finished native `task` delegation and, when enforcement
+  // is on, append a forcing note if the result fails verification. Advisory-grade
+  // (the task already ran, so we annotate rather than retry). Returns early for
+  // every non-`task` tool call so the common path does no config/env work.
+  const verifyDelegatedTask = async (input: any, output: any): Promise<void> => {
+    if (input?.tool !== "task") return;
+    let mode = "off";
+    try {
+      mode = resolveEnforcementMode({ config: cfg, env: process.env }).mode;
+    } catch {
+      // fall through with mode "off"
+    }
+    if (!shouldVerifyTask("task", mode, cfg.enforcement?.verify?.require)) return;
+    try {
+      const { finalReturnText, childSessionID } = parseTaskResult(output);
+      const producerTier =
+        typeof input?.args?.subagent_type === "string"
+          ? input.args.subagent_type
+          : "";
+      const dod = buildDelegationDoD({
+        prompt: input?.args?.prompt,
+        description: input?.args?.description,
+      });
+      const artefact = {
+        changedFiles: childSessionID ? changedFileStore.get(childSessionID) : [],
+        finalReturnText,
+        declaredOutputs: dod.deliverable ? [dod.deliverable] : [],
+        producerSessionID: childSessionID ?? "",
+        producerTier,
+      };
+      const trivial = childSessionID
+        ? sessionStore.isTrivial(childSessionID)
+        : false;
+      const res = await accept(
+        { dod, trivial, mode: "modeA" },
+        artefact,
+        buildGateDeps(),
+      );
+      if (!res.accepted && !res.verdict.skipped) {
+        const ladder = cfg.enforcement?.escalate?.ladder ?? ["fast", "medium", "heavy"];
+        const li = ladder.indexOf(producerTier);
+        const nextTier = li >= 0 && li < ladder.length - 1 ? ladder[li + 1] : null;
+        const note = scrubText(
+          buildForcingNote(res.verdict.reasons, { producerTier, nextTier }),
+        );
+        output.output =
+          typeof output.output === "string"
+            ? output.output + "\n\n" + note
+            : note;
+      }
+      if (childSessionID) changedFileStore.clear(childSessionID);
+    } catch {
+      // fail-closed: a verification error must NEVER throw out of the after-hook
+    }
+  };
+
   // /preset [name] — show presets, or switch and persist. Uses closure cfg
   // (freshly reloaded by the command handler before this runs).
   const handlePreset = (args: string): string => {
@@ -551,7 +612,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
 
       // Record-only: initialise a trajectory scorecard for tracked subagents.
       const sid = input?.sessionID;
-      if (sid && sessionStore.isSubagent(sid)) {
+      if (trajectoryDebug && sid && sessionStore.isSubagent(sid)) {
         trajectoryStore.ensure(sid, input?.agent ?? null);
       }
 
@@ -607,12 +668,14 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         return; // never break a real session on a guard-internal error
       }
       if (res.block) {
-        trajectoryStore.recordToolEvent(sid, {
-          tool: input.tool,
-          readOnly: READ_ONLY_TOOLS.has(input.tool),
-          blocked: true,
-          selfScript: res.guard === "anti_self_script",
-        });
+        if (trajectoryDebug) {
+          trajectoryStore.recordToolEvent(sid, {
+            tool: input.tool,
+            readOnly: READ_ONLY_TOOLS.has(input.tool),
+            blocked: true,
+            selfScript: res.guard === "anti_self_script",
+          });
+        }
         throw new Error(res.message);
       }
     },
@@ -638,10 +701,12 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       }
 
       if (sid && sessionStore.isSubagent(sid) && typeof input?.tool === "string") {
-        trajectoryStore.recordToolEvent(sid, {
-          tool: input.tool,
-          readOnly: READ_ONLY_TOOLS.has(input.tool),
-        });
+        if (trajectoryDebug) {
+          trajectoryStore.recordToolEvent(sid, {
+            tool: input.tool,
+            readOnly: READ_ONLY_TOOLS.has(input.tool),
+          });
+        }
         try {
           guardAfterCall({
             cfg,
@@ -657,61 +722,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         }
       }
 
-      // Option (i): verify-dispatch around the built-in `task` tool (advisory-grade —
-      // we observe the finished task result and append a forcing note if it is not
-      // accepted; we cannot retry a task call that already finished).
-      if (typeof input?.tool === "string") {
-        let mode = "off";
-        try {
-          mode = resolveEnforcementMode({ config: cfg, env: process.env }).mode;
-        } catch {
-          // fall through with mode "off"
-        }
-        const requireMode = cfg.enforcement?.verify?.require;
-        if (shouldVerifyTask(input.tool, mode, requireMode)) {
-          try {
-            const { finalReturnText, childSessionID } = parseTaskResult(output);
-            const producerTier =
-              typeof input?.args?.subagent_type === "string"
-                ? input.args.subagent_type
-                : "";
-            const dod = buildDelegationDoD({
-              prompt: input?.args?.prompt,
-              description: input?.args?.description,
-            });
-            const artefact = {
-              changedFiles: childSessionID
-                ? changedFileStore.get(childSessionID)
-                : [],
-              finalReturnText,
-              declaredOutputs: dod.deliverable ? [dod.deliverable] : [],
-              producerSessionID: childSessionID ?? "",
-              producerTier,
-            };
-            const trivial = childSessionID
-              ? sessionStore.isTrivial(childSessionID)
-              : false;
-            const res = await accept(
-              { dod, trivial, mode: "modeA" },
-              artefact,
-              buildGateDeps(),
-            );
-            if (!res.accepted && !res.verdict.skipped) {
-              const ladder = cfg.enforcement?.escalate?.ladder ?? ["fast", "medium", "heavy"];
-              const li = ladder.indexOf(producerTier);
-              const nextTier = li >= 0 && li < ladder.length - 1 ? ladder[li + 1] : null;
-              const note = scrubText(buildForcingNote(res.verdict.reasons, { producerTier, nextTier }));
-              output.output =
-                typeof output.output === "string"
-                  ? output.output + "\n\n" + note
-                  : note;
-            }
-            if (childSessionID) changedFileStore.clear(childSessionID);
-          } catch {
-            // fail-closed: a verification error must NEVER throw out of the after-hook
-          }
-        }
-      }
+      await verifyDelegatedTask(input, output);
     },
 
     // -----------------------------------------------------------------------
@@ -763,7 +774,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       }
 
       // Opt-in full trajectory dump (unchanged gating).
-      if (process.env.MODEL_ROUTER_TRAJECTORY_DEBUG !== "1") return;
+      if (!trajectoryDebug) return;
       const dump = trajectoryStore.dump(sid);
       if (!dump) return;
       try {
