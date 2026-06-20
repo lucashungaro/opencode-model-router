@@ -236,9 +236,9 @@ OpenCode runs on Bun, which executes the TypeScript code and resolves the plugin
 
 ## Configuration
 
-The full default configuration lives in `tiers.json` at the plugin root. There are two ways to customize it.
+The bundled defaults live in `tiers.json` at the plugin root. To customize models, tiers, or presets, add an **overrides file** — you never need to edit the bundled file.
 
-### Recommended: overrides files (survive updates)
+### Overrides files (survive updates)
 
 Anything in an overrides file is **deep-merged** over the bundled `tiers.json` on load — you only specify the keys you want to change; everything else falls back to the defaults. These files live outside the cache dir, so they are **not** wiped when the plugin updates.
 
@@ -266,16 +266,6 @@ The example above changes only the `@heavy` model/variant for the `github-copilo
 Run `/router overrides` to see both file paths, whether each exists, and the precedence order.
 
 Merge semantics: objects merge recursively; arrays and scalars are replaced wholesale (so an overridden `rules`/`whenToUse` list *replaces* the default, it does not append). If a file is missing, malformed, or produces an invalid config, the plugin logs a `[model-router]` warning and drops just that layer (keeping the others) — a typo in one file can never break startup or discard a valid file.
-
-### Advanced: edit the bundled `tiers.json` directly
-
-For an npm install, `tiers.json` is **inside the cached package directory**, not your `~/.config/opencode/` folder — typically:
-
-```
-~/.cache/opencode/packages/opencode-model-router@latest/node_modules/opencode-model-router/tiers.json
-```
-
-> ⚠️ Editing a copy elsewhere (e.g. under your global `npm` `node_modules`) has no effect, and this cached file is **overwritten on each plugin update**. Prefer the overrides file above unless you are developing the plugin from a local clone.
 
 ### Keeping models current
 
