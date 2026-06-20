@@ -51,13 +51,10 @@ import { createGuardStore } from "./guard/store";
 import { guardBeforeCall, guardAfterCall, formatScorecard } from "./guard/enforce";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, isAbsolute } from "node:path";
-import { exec as nodeExec } from "node:child_process";
-import { access, readFile as fsReadFile } from "node:fs/promises";
+import { join } from "node:path";
 import { tool } from "@opencode-ai/plugin";
 import { scrubText } from "./guard/scrub";
 import { accept } from "./verify/gate";
-import { createMutexRegistry } from "./verify/deterministic";
 import {
   createChangedFileStore,
   parseTaskResult,
@@ -67,7 +64,8 @@ import {
   buildForcingNote,
   buildAcceptedSuffix,
 } from "./verify/dispatch";
-import { newLadderState, recordAttempt, nextAction, advance, buildEscalatePolicy, formatLadderScorecard } from "./escalate/ladder";
+import { newLadderState, recordAttempt, nextAction, advance, buildEscalatePolicy } from "./escalate/ladder";
+import { createVerificationWiring, extractAssistantText } from "./verify/wiring";
 
 // ---------------------------------------------------------------------------
 // Re-exports — type-only re-exports for IDE/test consumers.
@@ -82,15 +80,6 @@ export type { Cap, SubagentState };
 export type { TrajectoryState, TrajectoryToolEvent } from "./telemetry/trajectory";
 export type { EnforcementMode } from "./router/enforcement";
 export type { GuardPolicy, GuardState, GuardCall, GuardDecision } from "./guard/guards";
-
-/** Concatenate the text parts of a `session.prompt` response into one string. */
-function extractAssistantText(res: any): string {
-  const parts: any[] = res?.data?.parts ?? [];
-  return parts
-    .filter((p) => p?.type === "text" && typeof p.text === "string")
-    .map((p) => p.text)
-    .join("\n");
-}
 
 // ---------------------------------------------------------------------------
 // Plugin
@@ -115,108 +104,16 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   const guardStore = createGuardStore();
 
   const changedFileStore = createChangedFileStore();
-  const graderSessions = new Set<string>();
 
-  // Layer-2 real adapters (live-only; every call site is fail-closed).
-  const execSeam = (
-    command: string,
-    opts?: { cwd?: string; timeoutMs?: number },
-  ): Promise<{ code: number; stdout: string; stderr: string; timedOut: boolean }> =>
-    new Promise((resolve) => {
-      try {
-        nodeExec(
-          command,
-          {
-            cwd: opts?.cwd ?? ctx.directory,
-            timeout: opts?.timeoutMs ?? 120000,
-            maxBuffer: 10 * 1024 * 1024,
-            windowsHide: true,
-          },
-          (err: any, stdout: any, stderr: any) => {
-            const timedOut = !!(err && err.killed && err.signal === "SIGTERM");
-            const code =
-              err && typeof err.code === "number" ? err.code : err ? 1 : 0;
-            resolve({
-              code,
-              stdout: String(stdout ?? ""),
-              stderr: String(stderr ?? ""),
-              timedOut,
-            });
-          },
-        );
-      } catch {
-        resolve({ code: 1, stdout: "", stderr: "exec failed", timedOut: false });
-      }
-    });
-  const fsSeam = {
-    async fileExists(p: string): Promise<boolean> {
-      try {
-        await access(isAbsolute(p) ? p : join(ctx.directory, p));
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    async readFile(p: string): Promise<string> {
-      return await fsReadFile(isAbsolute(p) ? p : join(ctx.directory, p), "utf-8");
-    },
-  };
-  const verifyMutex = createMutexRegistry();
-  const dispatchGrader = async (req: {
-    tier: string;
-    system: string;
-    prompt: string;
-  }): Promise<{ sessionID: string; text: string }> => {
-    const created: any = await ctx.client.session.create({});
-    const sid: string | undefined = created?.data?.id;
-    if (!sid) return { sessionID: "", text: "" };
-    graderSessions.add(sid);
-    try {
-      const model = tierModel(cfg, req.tier) ?? undefined;
-      const res: any = await ctx.client.session.prompt({
-        path: { id: sid },
-        body: {
-          ...(model ? { model } : {}),
-          system: req.system,
-          parts: [{ type: "text", text: req.prompt }],
-        },
-      });
-      return { sessionID: sid, text: extractAssistantText(res) };
-    } finally {
-      graderSessions.delete(sid);
-    }
-  };
-  const buildGateDeps = () => ({
-    deterministic: {
-      exec: execSeam,
-      fs: fsSeam,
-      cwd: ctx.directory,
-      mutex: verifyMutex,
-    },
-    checker: {
-      dispatchGrader,
-      ladder: ["fast", "medium", "heavy"],
-      minGraderTier: cfg.enforcement?.verify?.minGraderTier ?? null,
-    },
-    require: cfg.enforcement?.verify?.require,
+  // Layer-2 verification wiring (grader dispatch, exec/fs seams, gate deps,
+  // scorecard dump). getConfig() returns the current cfg so deps always reflect
+  // the latest /preset and /router enforce changes.
+  const verification = createVerificationWiring({
+    client: ctx.client,
+    directory: ctx.directory,
+    getConfig: () => cfg,
   });
-
-  // Best-effort, secret-free delegate scorecard dump (counts only).
-  const dumpDelegateScorecard = (
-    sid: string,
-    st: Parameters<typeof formatLadderScorecard>[0],
-    accepted: boolean,
-    method: string,
-  ): void => {
-    try {
-      const line = formatLadderScorecard(st, accepted, method);
-      const dir = join(tmpdir(), "opencode-model-router-trajectory");
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, `${sid}.delegate.log`), line + "\n", { flag: "a" });
-    } catch {
-      // best-effort only
-    }
-  };
+  const { buildGateDeps, dumpDelegateScorecard } = verification;
 
   // Bypass mode: when true, the router skips all system prompt injection,
   // subagent tracking, cap enforcement, and narration detection for the
@@ -575,7 +472,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
     // Grader sessions run at temperature 0 for deterministic verdicts.
     "chat.params": async (input: any, output: any) => {
       try {
-        if (input?.sessionID && graderSessions.has(input.sessionID)) {
+        if (input?.sessionID && verification.isGraderSession(input.sessionID)) {
           output.temperature = cfg.enforcement?.verify?.graderTemperature ?? 0;
         }
       } catch {
