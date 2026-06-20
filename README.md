@@ -307,7 +307,7 @@ The plugin ships with five presets (switch with `/preset <name>`):
 **github-copilot**:
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
-| @fast | `github-copilot/gpt-5.4-mini` | 1x |
+| @fast | `github-copilot/claude-haiku-4.5` | 1x |
 | @medium | `github-copilot/claude-sonnet-4.6` | 5x |
 | @heavy | `github-copilot/claude-opus-4.8` (high) | 20x |
 

@@ -94,9 +94,9 @@
     },
     "github-copilot": {
       "fast": {
-        "model": "github-copilot/gpt-5.4-mini",
+        "model": "github-copilot/claude-haiku-4.5",
         "costRatio": 1,
-        "description": "GPT-5.4 Mini via GitHub Copilot for fast exploration and simple tasks",
+        "description": "Claude Haiku 4.5 via GitHub Copilot for fast exploration and simple tasks",
         "steps": 30,
         "whenToUse": [
           "Codebase exploration and search",

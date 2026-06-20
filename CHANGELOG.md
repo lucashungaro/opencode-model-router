@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **GitHub Copilot preset model IDs.** Corrected to valid ids (`claude-sonnet-4.6`,
-  `claude-opus-4.8` with the `high` variant; `gpt-5.4-mini` for the fast tier) so subagent dispatch
+  `claude-opus-4.8` with the `high` variant; `claude-haiku-4.5` for the fast tier) so subagent dispatch
   no longer errors with `ProviderModelNotFoundError`.
 - **Local-plugin install docs.** opencode ignores a `{ "type": "local" }` entry in `opencode.json`
   (it npm-installs the package by name instead); documented the working mechanism — a re-export
