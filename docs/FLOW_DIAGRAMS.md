@@ -1,21 +1,20 @@
 # Command Execution Flow Diagrams
 
+> Diagrams reference **symbols/files**, not line numbers (they drift). See [LINE_REFERENCES.md](./LINE_REFERENCES.md) for the module map.
+
 ## 1. Command Registration & Execution Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Plugin Initialization                                           │
+│ Plugin Initialization (factory in src/index.ts)                 │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ config hook (lines 539-607)                                     │
-│ • opencodeConfig.agent[] = register tier agents                 │
-│ • opencodeConfig.command[] = register slash commands            │
-│   - "tiers" → template: ""                                      │
-│   - "preset" → template: "$ARGUMENTS"                           │
-│   - "budget" → template: "$ARGUMENTS"                           │
-│   - "annotate-plan" → template: multiline string                │
+│ config hook (src/index.ts)                                      │
+│ • opencodeConfig.agent[]   = register tier agents               │
+│ • opencodeConfig.command[] = register slash commands:           │
+│   tiers, preset, budget, bypass, router, annotate-plan          │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -25,37 +24,31 @@
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ command.execute.before hook (lines 624-651)                     │
+│ command.execute.before hook (src/index.ts)                      │
+│   input.command = "preset"; input.arguments = "openai"          │
 │                                                                 │
-│ Receives:                                                       │
-│  input.command = "preset"                                       │
-│  input.arguments = "openai"                                     │
-│                                                                 │
-│ Logic:                                                          │
-│  1. Check if input.command === "preset"                         │
-│  2. Load config (cached or fresh)                               │
-│  3. Call buildPresetOutput(cfg, "openai")                       │
-│  4. Push response to output.parts[]                             │
+│   switch (input.command) {                                      │
+│     case "preset": reload(); push(handlePreset("openai"));      │
+│   }                                                             │
+│   reload() = loadConfig() (cached unless dirty)                 │
+│   push()   = output.parts.push({ type:"text", text })          │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ buildPresetOutput() (lines 487-525)                             │
+│ handlePreset("openai")  (closure in src/index.ts)               │
 │                                                                 │
-│ 1. Trim & validate: "openai" → valid preset ✓                  │
-│ 2. resolvePresetName(cfg, "openai") → "openai"                 │
-│ 3. saveActivePreset("openai")                                   │
-│    └─ writeState({activePreset: "openai"})                      │
-│    └─ invalidateConfigCache()                                   │
-│ 4. Return confirmation message (Markdown)                       │
+│ 1. resolvePresetName(cfg, "openai") → "openai"                  │
+│ 2. saveActivePreset("openai")   (src/router/config.ts)          │
+│    └─ writeState({activePreset:"openai"}) + invalidateConfigCache()│
+│ 3. cfg.activePreset = "openai"                                  │
+│ 4. return buildPresetSwitched(cfg, "openai")                    │
+│         (pure renderer in src/commands/output.ts)               │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ output.parts.push({                                             │
-│   type: "text" as const,                                        │
-│   text: "Preset switched to **openai**.\n..."                   │
-│ })                                                              │
+│ output.parts.push({ type:"text", text:"Preset switched ..." })  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -64,56 +57,45 @@
           └───────────────────────────────────────┘
 ```
 
+Other commands follow the same shape: `tiers` → `buildTiersOutput`; `budget` → `handleBudget`; `bypass` → `handleBypass`; `router` → `handleRouterCommand` (async: `enforce`/`overrides`/`models`/status).
+
 ---
 
 ## 2. State Persistence & Cache Invalidation
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Initial State                                                   │
-│                                                                 │
-│ _cachedConfig = null                                            │
-│ _configDirty = true                                             │
+│ Initial State:  _cachedConfig = null;  _configDirty = true      │
 └─────────────────────────────────────────────────────────────────┘
                               │
                     User runs /preset openai
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ loadConfig() (lines 180-208)                                    │
-│                                                                 │
-│ Check: if (_cachedConfig && !_configDirty)                      │
-│   NO → Read tiers.json from disk                                │
-│ Merge: state from ~/.config/opencode/opencode-model-router... │
-│ Cache: _cachedConfig = cfg; _configDirty = false                │
-│ Return: RouterConfig                                            │
+│ loadConfig()  (src/router/config.ts)                            │
+│  if (_cachedConfig && !_configDirty) return cache               │
+│  else build effective config (lowest→highest priority):         │
+│    bundled tiers.json                                           │
+│    → global  ~/.config/opencode/model-router-overrides.json     │
+│    → project <repo>/.opencode/model-router-overrides.json       │
+│    → persisted state (active preset/mode/enforcement)           │
+│  cache it; _configDirty = false                                 │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ saveActivePreset("openai") (lines 234-248)                      │
-│                                                                 │
-│ Step 1: cfg.activePreset = "openai"                             │
-│ Step 2: writeState({activePreset: "openai"})                    │
-│         └─ ~/.config/opencode/opencode-model-router.state.json  │
-│            {                                                    │
-│              "activePreset": "openai",                          │
-│              "activeMode": "normal"                             │
-│            }                                                    │
-│                                                                 │
-│ Step 3: invalidateConfigCache()                                 │
-│         └─ _configDirty = true                                  │
+│ saveActivePreset("openai")  (src/router/config.ts)              │
+│  Step 1: cfg.activePreset = "openai"                            │
+│  Step 2: writeState({activePreset:"openai"})                    │
+│          └─ ~/.config/opencode/opencode-model-router.state.json │
+│  Step 3: invalidateConfigCache()  → _configDirty = true         │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Next message arrives                                            │
-│                                                                 │
-│ experimental.chat.system.transform hook calls loadConfig()      │
-│ → Sees _configDirty = true                                      │
-│ → Re-reads tiers.json + state file                              │
-│ → Loads activePreset = "openai" from state                      │
-│ → Updates system prompt with new delegation protocol            │
+│ Next message → experimental.chat.system.transform calls         │
+│ loadConfig(); sees _configDirty=true; rebuilds; picks up the    │
+│ new activePreset and refreshes the injected delegation protocol │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -122,44 +104,27 @@
 ## 3. Argument Parsing Pattern
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ Command Execution with Arguments                                │
-│                                                                 │
-│ User: /preset openai                                            │
-│ OpenCode parses:                                                │
-│  • input.command = "preset"                                     │
-│  • input.arguments = "openai"                                   │
-└─────────────────────────────────────────────────────────────────┘
+User: /preset openai
+  → input.command = "preset"; input.arguments = "openai"
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ buildPresetOutput(cfg, "openai")                                │
+│ handlePreset("openai")                                          │
+│   const requested = "openai".trim()        // "openai"          │
 │                                                                 │
-│ const requestedPreset = "openai".trim()  // "openai"            │
-│                                                                 │
-│ Decision Tree:                                                  │
-│                                                                 │
-│   if (!requestedPreset) → "openai" is truthy                    │
-│     └─ Jump to: switch preset                                   │
-│                                                                 │
-│   else                                                          │
-│     const resolved = resolvePresetName(cfg, "openai")           │
-│     ├─ Check cfg.presets["openai"] → ✓ exists                  │
-│     └─ return "openai"                                          │
-│                                                                 │
-│     if (resolved) → "openai" is truthy                          │
-│       ├─ saveActivePreset("openai")                             │
-│       │  └─ writeState + invalidateConfigCache()                │
-│       │                                                         │
-│       └─ return "Preset switched to **openai**. ..."            │
-│                                                                 │
-│     else                                                        │
-│       └─ return "Unknown preset..."                             │
+│   if (!requested)            → buildPresetList(cfg)             │
+│   else resolvePresetName(cfg, requested)                        │
+│        ├─ not found          → buildUnknownPreset(cfg, requested)│
+│        └─ found ("openai")   → saveActivePreset("openai")        │
+│                               cfg.activePreset = "openai"        │
+│                               → buildPresetSwitched(cfg,"openai")│
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
                     Response sent to user
 ```
+
+The decide/mutate logic lives in the handler closure; the three return paths are pure renderers in `src/commands/output.ts`.
 
 ---
 
@@ -168,72 +133,44 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ User sends a message                                            │
-│ (e.g., "Help me refactor this code")                            │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ OpenCode chat processing:                                       │
-│ 1. Build system prompt (starts with core instructions)          │
-│ 2. Run experimental.chat.system.transform hook                  │
+│ experimental.chat.system.transform (src/index.ts)              │
+│   if (bypassed) return;                                         │
+│   cfg = loadConfig();            // reload if dirty             │
+│   if (subagent session) return;  // only inject for orchestrator│
+│   enfOn = resolveEnforcementMode(...).mode !== "off"            │
+│   output.system.push(                                           │
+│     assembleSystemPrompt(cfg, orchestratorModel, enfOn))        │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ experimental.chat.system.transform (lines 612-619)              │
-│                                                                 │
-│ async (input: any, output: any) => {                            │
-│   try {                                                         │
-│     cfg = loadConfig();  // Reload if _configDirty = true       │
-│   } catch {                                                     │
-│     // Use last known cfg                                       │
-│   }                                                             │
-│   // Append delegation protocol to system prompt                │
-│   output.system.push(buildDelegationProtocol(cfg));             │
-│ }                                                               │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ buildDelegationProtocol(cfg) (lines 370-404)                    │
-│                                                                 │
-│ Builds multi-line string:                                       │
+│ assembleSystemPrompt(...)  (src/router/protocol.ts)             │
+│  → delegation protocol (+ Claude adversarial/anti-narration     │
+│    prefixes; + DoD section when enforcement is on):             │
 │                                                                 │
 │ ## Model Delegation Protocol                                    │
-│ Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) ...       │
-│ R: @fast→broader read-only exploration ... @medium→impl ...    │
-│ @heavy→arch ...                                                │
-│ Multi-phase: prefer explore(@fast)→execute(@medium) when sep... │
-│ One-off direct lookups can stay direct when clearly faster;    │
-│ gather extra context before @heavy only when needed.           │
-│ 1.rule1 2.rule2 3.rule3 ...                                     │
-│ Err→retry-alt-tier→fail→direct. Chain: anthropic→openai...      │
-│ Delegate with Task(subagent_type="fast|medium|heavy"...)        │
-│ Keep orchestration and final synthesis in primary agent.        │
+│ Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x)           │
+│   @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max  │
+│ R: @fast→search/grep/read... @medium→impl... @heavy→arch...     │
+│ Multi-phase: explore(@fast)→execute(@medium) when separable.    │
+│ Err→retry-alt-tier→fail→direct. Chain:                          │
+│   anthropic→openai→google→github-copilot                        │
+│ Delegate with Task(subagent_type="fast|medium|heavy", ...)      │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ output.system.push(protocolText)                                │
-│                                                                 │
-│ System prompt now contains:                                     │
-│ • Core OpenCode instructions                                    │
-│ • Model Delegation Protocol (injected by plugin)                │
-│                                                                 │
-│ Final system prompt sent to model ↓                             │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ Model (with updated system prompt) processes user request      │
-│                                                                 │
-│ Model now knows:                                                │
-│ • Which tiers are available (@fast, @medium, @heavy)            │
-│ • Which models each tier uses                                   │
-│ • Rules for when to use each tier                               │
-│ • How to delegate to subagents                                  │
+│ Model receives core instructions + injected protocol and now    │
+│ knows the tiers, their models, the routing rules, and how to    │
+│ delegate via Task().                                            │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+Subagent sessions are skipped (detected in `chat.message`) so a tier executing a task is not handed orchestration instructions.
 
 ---
 
@@ -248,8 +185,6 @@ const MyPlugin: Plugin = async (_ctx: PluginInput) => {
   let state = { count: 0 };
 
   return {
-    // ──────────────────────────────────────────────────────────
-
     config: async (opencodeConfig: any) => {
       opencodeConfig.command ??= {};
       opencodeConfig.command["counter"] = {
@@ -258,66 +193,29 @@ const MyPlugin: Plugin = async (_ctx: PluginInput) => {
       };
     },
 
-    // ──────────────────────────────────────────────────────────
-
     "command.execute.before": async (input: any, output: any) => {
       if (input.command === "counter") {
         const args = (input.arguments ?? "").trim();
 
-        // No args: show current
         if (!args) {
-          output.parts.push({
-            type: "text" as const,
-            text: `Counter: ${state.count}`,
-          });
+          output.parts.push({ type: "text" as const, text: `Counter: ${state.count}` });
           return;
         }
-
-        // "increment" arg: add 1
         if (args === "increment") {
           state.count++;
-          output.parts.push({
-            type: "text" as const,
-            text: `Counter incremented to: **${state.count}**`,
-          });
+          output.parts.push({ type: "text" as const, text: `Counter incremented to: **${state.count}**` });
           return;
         }
-
-        // Unknown arg
-        output.parts.push({
-          type: "text" as const,
-          text: `Unknown arg: "${args}". Try: /counter increment`,
-        });
+        output.parts.push({ type: "text" as const, text: `Unknown arg: "${args}". Try: /counter increment` });
       }
     },
   };
 };
 
-// ──────────────────────────────────────────────────────────────
-// Usage Flow:
-// ──────────────────────────────────────────────────────────────
-
-// User: /counter
-// ├─ input.command = "counter"
-// ├─ input.arguments = null
-// ├─ args = ""
-// ├─ args check fails, goes to: if (!args) → true
-// └─ Output: "Counter: 0"
-
-// User: /counter increment
-// ├─ input.command = "counter"
-// ├─ input.arguments = "increment"
-// ├─ args = "increment"
-// ├─ args check fails, goes to: if (args === "increment") → true
-// ├─ state.count++ → 1
-// └─ Output: "Counter incremented to: **1**"
-
-// User: /counter unknown
-// ├─ input.command = "counter"
-// ├─ input.arguments = "unknown"
-// ├─ args = "unknown"
-// ├─ Both if checks fail
-// └─ Output: "Unknown arg: "unknown". Try: /counter increment"
+// Usage:
+// /counter            → "Counter: 0"
+// /counter increment  → "Counter incremented to: **1**"
+// /counter unknown    → "Unknown arg: \"unknown\". Try: /counter increment"
 ```
 
 ---
@@ -325,31 +223,17 @@ const MyPlugin: Plugin = async (_ctx: PluginInput) => {
 ## 6. Output Type System
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ Command Response Output                                         │
-└─────────────────────────────────────────────────────────────────┘
-
 output.parts is an array of message parts:
 
 output.parts = [
-  {
-    type: "text" as const,
-    text: "This is the response text"
-  },
-  // Could add other types in future:
-  // { type: "image", url: "..." },
-  // { type: "code", language: "ts", code: "..." },
-  // etc.
+  { type: "text" as const, text: "This is the response text" },
+  // other types may exist in the host; model-router uses "text" only
 ]
 
-Currently only "text" type is used in model-router plugin.
-
 All responses are built as Markdown strings:
-• **bold** for emphasis
-• `code` for monospace
-• # Headings
-• - Bullet lists
-• Line breaks with empty strings
+• **bold** for emphasis   • `code` for monospace
+• # Headings              • - Bullet lists
+• Line breaks via empty strings joined with "\n"
 ```
 
 ---
@@ -359,34 +243,30 @@ All responses are built as Markdown strings:
 ```
 opencode-model-router/
 │
-├── tiers.json                    # Config: presets, modes, rules
-│   ├── activePreset: "anthropic"
-│   ├── presets:
-│   │   ├── anthropic: {fast, medium, heavy}
-│   │   ├── openai: {fast, medium, heavy}
-│   │   └── github-copilot: {fast, medium, heavy}
-│   ├── modes:
-│   │   ├── normal
-│   │   ├── budget
-│   │   └── quality
-│   └── rules: [...]
+├── tiers.json                       # bundled defaults
+│   ├── activePreset / defaultTier
+│   ├── presets: anthropic, openai, github-copilot, google, hybrid
+│   ├── modes:   normal, budget, quality, deep
+│   ├── rules / taskPatterns / tierCaps / tierPrompts
+│   └── enforcement {...}
 │
 ├── src/
-│   └── index.ts                 # Plugin implementation
-│       ├── Type definitions (lines 11-55)
-│       ├── Config loading (lines 66-178)
-│       ├── State persistence (lines 227-259)
-│       ├── System prompt builder (lines 370-404)
-│       ├── Output builders (lines 410-525)
-│       └── Plugin hooks:
-│           ├── config (lines 539-607)
-│           ├── experimental.chat.system.transform (lines 612-619)
-│           └── command.execute.before (lines 624-651)
+│   ├── index.ts                     # plugin factory: hooks + handler closures
+│   ├── router/
+│   │   ├── config.ts                # load/validate/merge config + state + save*
+│   │   ├── protocol.ts              # assembleSystemPrompt + tier prompts
+│   │   ├── sessions.ts              # per-session tier/cap tracking
+│   │   ├── enforcement.ts           # enforcement-mode resolver
+│   │   └── catalog.ts               # model-catalog normalize/validate
+│   ├── commands/output.ts           # pure slash-command renderers
+│   ├── guard/*                      # Layer 1 hard-block guard
+│   ├── verify/*                     # Layer 2 acceptance gate (+ wiring.ts)
+│   └── escalate/ladder.ts           # Layer 3 escalation ladder
 │
-├── ~/.config/opencode/
-│   └── opencode-model-router.state.json  # Runtime state
-│       ├── activePreset: "openai"  (user selection)
-│       └── activeMode: "budget"    (user selection)
+└── ~/.config/opencode/
+    ├── opencode-model-router.state.json   # active preset/mode/enforcement
+    └── model-router-overrides.json        # optional global overrides (deep-merged)
+        # project overrides: <repo>/.opencode/model-router-overrides.json
 ```
 
 ---
@@ -395,52 +275,30 @@ opencode-model-router/
 
 ```
 Handler receives: input.arguments = "user input" or null
-
+                              │
+                              ▼
+              args = (input.arguments ?? "").trim()  // [.toLowerCase() if case-insensitive]
+                              │
+                              ▼
                     ┌──────────────────────────┐
-                    │ input.arguments          │
-                    └──────────────────────────┘
-                            │
-                            ▼
-                    ┌──────────────────────────┐
-                    │ args = input.arguments   │
-                    │      ?? ""               │
-                    │                          │
-                    │ Ensures string type      │
-                    └──────────────────────────┘
-                            │
-                            ▼
-                    ┌──────────────────────────┐
-                    │ args = args.trim()       │
-                    │ .toLowerCase()           │
-                    │                          │
-                    │ Normalize: remove spaces,│
-                    │ standardize case         │
-                    └──────────────────────────┘
-                            │
-                            ▼
-                    ┌──────────────────────────┐
-                    │ Is args empty?           │
-                    │ if (!args)               │
+                    │ Is args empty? if (!args)│
                     └──────────────────────────┘
                         │           │
                       YES           NO
                         │           │
                         ▼           ▼
             ┌─────────────────┐ ┌────────────────┐
-            │ Show help/      │ │ Is valid       │
+            │ Show help /     │ │ Is it a valid  │
             │ current state   │ │ value?         │
-            │                 │ │ if(config[...])│
-            │ /preset         │ │                │
-            │ /budget         │ │ Yes    │ No    │
-            │ (no args)       │ └─┬──────┬───────┘
-            └─────────────────┘   │      │
-                                  ▼      ▼
-                        ┌────────────┐┌────────────┐
-                        │ Process    ││ Error msg: │
-                        │ Change:    ││ Unknown    │
-                        │ • Save     ││ value      │
-                        │ • Persist  ││            │
-                        │ • Confirm  ││ List valid │
-                        │            ││ options    │
-                        └────────────┘└────────────┘
+            │ (list builder)  │ │                │
+            └─────────────────┘ │ Yes      No    │
+                                └─┬────────┬──────┘
+                                  ▼        ▼
+                        ┌────────────┐ ┌────────────┐
+                        │ save* +    │ │ Unknown-   │
+                        │ persist +  │ │ value      │
+                        │ confirm    │ │ renderer   │
+                        │ renderer   │ │ (+ valid   │
+                        │            │ │  options)  │
+                        └────────────┘ └────────────┘
 ```
