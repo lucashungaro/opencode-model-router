@@ -593,6 +593,33 @@ export function writeState(patch: Partial<RouterState>): void {
   renameSync(tmp, p);
 }
 
+/** Persist the active preset (no-op for an unknown preset name). */
+export function saveActivePreset(presetName: string): void {
+  const cfg = loadConfig();
+  const resolved = resolvePresetName(cfg, presetName);
+  if (!resolved) return;
+  cfg.activePreset = resolved;
+  // Persist user-selected preset to state file only — never mutate tiers.json.
+  writeState({ activePreset: resolved });
+  // Invalidate cache so the next read picks up the new active preset.
+  invalidateConfigCache();
+}
+
+/** Persist the active routing mode (no-op for an unknown mode name). */
+export function saveActiveMode(modeName: string): void {
+  const cfg = loadConfig();
+  if (!cfg.modes?.[modeName]) return;
+  cfg.activeMode = modeName;
+  writeState({ activeMode: modeName });
+  invalidateConfigCache();
+}
+
+/** Persist the enforcement mode. */
+export function saveEnforcementMode(mode: "off" | "advisory" | "enforced"): void {
+  writeState({ enforcementMode: mode });
+  invalidateConfigCache();
+}
+
 // ---------------------------------------------------------------------------
 // Enforcement helpers
 // ---------------------------------------------------------------------------

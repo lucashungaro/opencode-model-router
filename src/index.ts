@@ -4,13 +4,32 @@ import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import {
   loadConfig,
   resolvePresetName,
-  writeState,
-  invalidateConfigCache,
+  saveActivePreset,
+  saveActiveMode,
+  saveEnforcementMode,
   overridePath,
   localOverridePath,
   findProjectOverride,
 } from "./router/config";
-import type { RouterConfig, TierConfig, Preset, ModeConfig } from "./router/config";
+import type { RouterConfig } from "./router/config";
+import {
+  buildAgentOptions,
+  buildTiersOutput,
+  buildPresetList,
+  buildPresetSwitched,
+  buildUnknownPreset,
+  buildNoModes,
+  buildBudgetList,
+  buildBudgetSwitched,
+  buildUnknownMode,
+  buildBypassMessage,
+  buildEnforceSet,
+  buildEnforceStatus,
+  buildRouterHelp,
+  buildOverridesOutput,
+  buildModelsOutput,
+  formatModelIssues,
+} from "./commands/output";
 import { detectNarration } from "./guard/narration";
 import {
   getActiveTiers,
@@ -63,314 +82,6 @@ export type { Cap, SubagentState };
 export type { TrajectoryState, TrajectoryToolEvent } from "./telemetry/trajectory";
 export type { EnforcementMode } from "./router/enforcement";
 export type { GuardPolicy, GuardState, GuardCall, GuardDecision } from "./guard/guards";
-
-function saveActivePreset(presetName: string): void {
-  const cfg = loadConfig();
-  const resolved = resolvePresetName(cfg, presetName);
-  if (!resolved) {
-    return;
-  }
-
-  cfg.activePreset = resolved;
-
-  // Persist user-selected preset to state file only — never mutate tiers.json
-  writeState({ activePreset: resolved });
-
-  // Invalidate cache so next read picks up the new active preset
-  invalidateConfigCache();
-}
-
-function saveActiveMode(modeName: string): void {
-  const cfg = loadConfig();
-  if (!cfg.modes?.[modeName]) {
-    return;
-  }
-
-  cfg.activeMode = modeName;
-  writeState({ activeMode: modeName });
-  invalidateConfigCache();
-}
-
-function saveEnforcementMode(mode: "off" | "advisory" | "enforced"): void {
-  writeState({ enforcementMode: mode });
-  invalidateConfigCache();
-}
-
-function buildRouterOutput(cfg: RouterConfig, args: string): string {
-  const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
-  const sub = (tokens[0] ?? "").toLowerCase();
-  if (sub === "enforce") {
-    const mode = (tokens[1] ?? "").toLowerCase();
-    if (mode === "off" || mode === "advisory" || mode === "enforced") {
-      saveEnforcementMode(mode);
-      const desc =
-        mode === "off"
-          ? "Hard-block guard disabled (default routing behaviour)."
-          : mode === "advisory"
-            ? "Guard evaluates and surfaces banners but never hard-blocks."
-            : "Guard hard-blocks subagent tool calls that violate budget / redundancy / self-script policy.";
-      return [
-        `Enforcement mode set to **${mode}** and persisted.`,
-        "",
-        desc,
-        "",
-        "Note: the `MODEL_ROUTER_ENFORCE` env var, when set to `0` or `1`, overrides this setting.",
-      ].join("\n");
-    }
-    const current = resolveEnforcementMode({ config: cfg, env: process.env }).mode;
-    return [
-      `Current enforcement mode: **${current}**`,
-      "",
-      "Usage: `/router enforce <off|advisory|enforced>`",
-    ].join("\n");
-  }
-  if (sub === "overrides") {
-    const globalP = overridePath();
-    const foundLocal = findProjectOverride();
-    const localP = foundLocal ?? localOverridePath();
-    const mark = (p: string) => (existsSync(p) ? "present" : "absent");
-    const localNote = foundLocal
-      ? ""
-      : ` _(create at \`${localP}\`; the project file is searched upward from the working dir to the repo root)_`;
-    return [
-      `# Model Router — config overrides`,
-      "",
-      "Config is loaded lowest→highest priority; each layer deep-merges over the previous one:",
-      "",
-      "1. bundled `tiers.json` (defaults)",
-      `2. global — \`${globalP}\` _(${mark(globalP)})_`,
-      `3. project — \`${localP}\` _(${mark(localP)})_${localNote}`,
-      "",
-      `Active preset: **${cfg.activePreset}**. Run \`/tiers\` to see the effective models after merging.`,
-      "",
-      "Create either file to customize models/tiers/presets without editing the cached `tiers.json`. Objects merge recursively; arrays and scalars are replaced.",
-    ].join("\n");
-  }
-  const current = resolveEnforcementMode({ config: cfg, env: process.env }).mode;
-  return [
-    `# Model Router`,
-    `Enforcement: **${current}**`,
-    "",
-    "Commands:",
-    "- `/router enforce <off|advisory|enforced>` — set hard-block enforcement (persisted)",
-    "- `/router overrides` — show the global + project override file paths and precedence",
-    "- `/router models [provider]` — list valid model ids from your configured providers",
-    "- `/tiers`, `/preset`, `/budget`, `/bypass`, `/annotate-plan`",
-  ].join("\n");
-}
-
-/** Render the live model catalog (optionally filtered to one provider). */
-function buildModelsOutput(catalog: Catalog | null, filter: string): string {
-  if (!catalog) {
-    return "Model catalog unavailable — could not query opencode's providers.";
-  }
-  if (catalog.providers.length === 0) {
-    return "No providers are configured/authenticated in opencode.";
-  }
-  const f = filter.trim().toLowerCase();
-  const providers = f
-    ? catalog.providers.filter((p) => p.id.toLowerCase() === f)
-    : catalog.providers;
-  if (providers.length === 0) {
-    return `No configured provider matches \`${filter.trim()}\`. Available: ${catalog.providers
-      .map((p) => p.id)
-      .join(", ")}.`;
-  }
-
-  const lines: string[] = ["# Model Router — available models", ""];
-  for (const p of providers) {
-    const name = p.name && p.name !== p.id ? ` (${p.name})` : "";
-    const def = p.defaultModel ? ` — default: \`${p.id}/${p.defaultModel}\`` : "";
-    lines.push(`## ${p.id}${name}${def}`);
-    const sorted = [...p.models].sort((a, b) => a.id.localeCompare(b.id));
-    if (sorted.length === 0) {
-      lines.push("- _(no models)_");
-    } else {
-      for (const m of sorted) {
-        const flag = m.status && m.status !== "active" ? ` _(${m.status})_` : "";
-        lines.push(`- \`${p.id}/${m.id}\`${flag}`);
-      }
-    }
-    lines.push("");
-  }
-  lines.push(
-    "Paste any id above into an overrides file (`/router overrides` shows where).",
-  );
-  return lines.join("\n");
-}
-
-/** Render model-validation issues for the active preset as a markdown block. */
-function formatModelIssues(issues: ModelIssue[]): string {
-  const lines: string[] = ["⚠ **Model issues in the active preset:**"];
-  for (const it of issues) {
-    const what =
-      it.kind === "provider-unknown"
-        ? `provider \`${it.providerId}\` is not configured/authenticated`
-        : it.kind === "model-deprecated"
-          ? `\`${it.ref}\` is **deprecated**`
-          : `\`${it.ref}\` was not found`;
-    let line = `- @${it.tier}: ${what}.`;
-    if (it.suggestions.length > 0) {
-      line += ` Try: ${it.suggestions.map((s) => `\`${s}\``).join(", ")}.`;
-    }
-    lines.push(line);
-  }
-  lines.push(
-    "",
-    "Set a replacement in your overrides file (`/router overrides`), then re-run `/router`.",
-  );
-  return lines.join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// Build agent options from tier config
-// ---------------------------------------------------------------------------
-
-function buildAgentOptions(tier: TierConfig): Record<string, unknown> {
-  const opts: Record<string, unknown> = {};
-
-  // Anthropic thinking config
-  if (tier.thinking) {
-    if (tier.thinking.budgetTokens) {
-      opts.budget_tokens = tier.thinking.budgetTokens;
-    }
-  }
-
-  // OpenAI reasoning config
-  if (tier.reasoning) {
-    if (tier.reasoning.effort) {
-      opts.reasoning_effort = tier.reasoning.effort;
-    }
-    if (tier.reasoning.summary) {
-      opts.reasoning_summary = tier.reasoning.summary;
-    }
-  }
-
-  return Object.keys(opts).length > 0 ? opts : {};
-}
-
-// ---------------------------------------------------------------------------
-// /tiers command output
-// ---------------------------------------------------------------------------
-
-function buildTiersOutput(cfg: RouterConfig): string {
-  const tiers = getActiveTiers(cfg);
-  const lines: string[] = [
-    `# Model Delegation Tiers`,
-    `Active preset: **${cfg.activePreset}**\n`,
-  ];
-
-  for (const [name, tier] of Object.entries(tiers)) {
-    const thinkingStr = tier.thinking
-      ? ` | thinking: ${tier.thinking.budgetTokens} tokens`
-      : tier.reasoning
-        ? ` | reasoning: effort=${tier.reasoning.effort}`
-        : "";
-    lines.push(`## @${name} -> \`${tier.model}\`${thinkingStr}`);
-    lines.push(tier.description);
-    lines.push(`Steps: ${tier.steps ?? "default"}`);
-    lines.push(`Use when: ${tier.whenToUse.join(", ")}\n`);
-  }
-
-  lines.push("## Delegation Rules");
-  cfg.rules.forEach((r) => lines.push(`- ${r}`));
-  lines.push(`\nDefault tier: @${cfg.defaultTier}`);
-  lines.push(`\nAvailable presets: ${Object.keys(cfg.presets).join(", ")}`);
-  lines.push(`Switch with: \`/preset <name>\``);
-  lines.push(`Edit \`tiers.json\` to customize.`);
-
-  return lines.join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// /budget command output
-// ---------------------------------------------------------------------------
-
-function buildBudgetOutput(cfg: RouterConfig, args: string): string {
-  const modes = cfg.modes;
-  if (!modes || Object.keys(modes).length === 0) {
-    return 'No modes configured in tiers.json. Add a "modes" section to enable budget mode.';
-  }
-
-  const requested = args.trim().toLowerCase();
-  const currentMode = cfg.activeMode || "normal";
-
-  // No args: show current mode and available modes
-  if (!requested) {
-    const lines = ["# Routing Modes\n"];
-    for (const [name, mode] of Object.entries(modes)) {
-      const active = name === currentMode ? " <- active" : "";
-      lines.push(
-        `- **${name}**${active}: ${mode.description} (default tier: @${mode.defaultTier})`,
-      );
-    }
-    lines.push(`\nSwitch with: \`/budget <mode>\``);
-    return lines.join("\n");
-  }
-
-  // Switch mode
-  if (modes[requested]) {
-    saveActiveMode(requested);
-    const mode = modes[requested];
-    return [
-      `Routing mode switched to **${requested}**.`,
-      "",
-      mode.description,
-      `Default tier: @${mode.defaultTier}`,
-      ...(mode.overrideRules?.length
-        ? ["", "Active rules:", ...mode.overrideRules.map((r) => `- ${r}`)]
-        : []),
-      "",
-      "Mode change takes effect immediately on the next message.",
-    ].join("\n");
-  }
-
-  return `Unknown mode: "${requested}". Available: ${Object.keys(modes).join(", ")}`;
-}
-
-// ---------------------------------------------------------------------------
-// /preset command output
-// ---------------------------------------------------------------------------
-
-function buildPresetOutput(cfg: RouterConfig, args: string): string {
-  const requestedPreset = args.trim();
-
-  // No args: show available presets
-  if (!requestedPreset) {
-    const lines = ["# Available Presets\n"];
-    for (const [name, tiers] of Object.entries(cfg.presets)) {
-      const active = name === cfg.activePreset ? " <- active" : "";
-      const models = Object.entries(tiers)
-        .map(([tier, t]) => `${tier}: ${t.model.split("/").pop()}`)
-        .join(", ");
-      lines.push(`- **${name}**${active}: ${models}`);
-    }
-    lines.push(`\nSwitch with: \`/preset <name>\``);
-    return lines.join("\n");
-  }
-
-  // Switch preset
-  const resolvedPreset = resolvePresetName(cfg, requestedPreset);
-  if (resolvedPreset) {
-    saveActivePreset(resolvedPreset);
-    cfg.activePreset = resolvedPreset;
-    const tiers = cfg.presets[resolvedPreset]!;
-    const models = Object.entries(tiers)
-      .map(([tier, t]) => `  @${tier} -> ${t.model}`)
-      .join("\n");
-    return [
-      `Preset switched to **${resolvedPreset}**.`,
-      "",
-      models,
-      "",
-      "Selection is now persisted in ~/.config/opencode/opencode-model-router.state.json.",
-      "Restart OpenCode for subagent model registration to take effect.",
-      "System prompt delegation rules update immediately.",
-    ].join("\n");
-  }
-
-  return `Unknown preset: "${requestedPreset}". Available: ${Object.keys(cfg.presets).join(", ")}`;
-}
 
 /** Concatenate the text parts of a `session.prompt` response into one string. */
 function extractAssistantText(res: any): string {
@@ -528,24 +239,75 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   // plugin lifetime (re-validate on demand via /router).
   let catalogChecked = false;
 
+  // /preset [name] — show presets, or switch and persist. Uses closure cfg
+  // (freshly reloaded by the command handler before this runs).
+  const handlePreset = (args: string): string => {
+    const requested = args.trim();
+    if (!requested) return buildPresetList(cfg);
+    const resolved = resolvePresetName(cfg, requested);
+    if (!resolved) return buildUnknownPreset(cfg, requested);
+    saveActivePreset(resolved);
+    cfg.activePreset = resolved;
+    return buildPresetSwitched(cfg, resolved);
+  };
+
+  // /budget [mode] — show modes, or switch and persist.
+  const handleBudget = (args: string): string => {
+    const modes = cfg.modes;
+    if (!modes || Object.keys(modes).length === 0) return buildNoModes();
+    const requested = args.trim().toLowerCase();
+    if (!requested) return buildBudgetList(cfg);
+    const mode = modes[requested];
+    if (!mode) return buildUnknownMode(modes, requested);
+    saveActiveMode(requested);
+    return buildBudgetSwitched(mode, requested);
+  };
+
   // /bypass [on|off] — toggle the router off/on for the session.
   const handleBypass = (args: string): string => {
     const arg = args.toLowerCase();
     bypassed = arg === "on" ? true : arg === "off" ? false : !bypassed;
-    return bypassed
-      ? "# Bypass: ON\n\nModel-router is **bypassed**. Delegation protocol, cap enforcement, and narration detection are disabled. The model will run without routing rules until you run `/bypass off` or restart OpenCode."
-      : "# Bypass: OFF\n\nModel-router is **active**. Delegation protocol and all enforcement rules are in effect.";
+    return buildBypassMessage(bypassed);
   };
 
-  // /router [enforce|overrides|models|...] — uses the freshly-reloaded cfg.
+  // /router [enforce|overrides|models] — uses the freshly-reloaded cfg.
   const handleRouterCommand = async (args: string): Promise<string> => {
     const parts = args.split(/\s+/).filter(Boolean);
     const sub = (parts[0] ?? "").toLowerCase();
+
+    if (sub === "enforce") {
+      const mode = (parts[1] ?? "").toLowerCase();
+      if (mode === "off" || mode === "advisory" || mode === "enforced") {
+        saveEnforcementMode(mode);
+        return buildEnforceSet(mode);
+      }
+      return buildEnforceStatus(
+        resolveEnforcementMode({ config: cfg, env: process.env }).mode,
+      );
+    }
+
+    if (sub === "overrides") {
+      const foundLocal = findProjectOverride();
+      const globalPath = overridePath();
+      const localPath = foundLocal ?? localOverridePath();
+      return buildOverridesOutput({
+        globalPath,
+        globalPresent: existsSync(globalPath),
+        localPath,
+        localPresent: existsSync(localPath),
+        foundLocal: !!foundLocal,
+        activePreset: cfg.activePreset,
+      });
+    }
+
     if (sub === "models") {
       return buildModelsOutput(await fetchCatalog(), parts.slice(1).join(" "));
     }
-    let text = buildRouterOutput(cfg, args);
-    // On the bare status view, surface any stale/missing models inline.
+
+    // Bare /router: status help, plus inline stale/missing-model warnings.
+    let text = buildRouterHelp(
+      resolveEnforcementMode({ config: cfg, env: process.env }).mode,
+    );
     if (sub === "") {
       const catalog = await fetchCatalog();
       if (catalog) {
@@ -1174,11 +936,11 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
           break;
         case "preset":
           reload();
-          push(buildPresetOutput(cfg, args));
+          push(handlePreset(args));
           break;
         case "budget":
           reload();
-          push(buildBudgetOutput(cfg, args));
+          push(handleBudget(args));
           break;
         case "bypass":
           push(handleBypass(args));

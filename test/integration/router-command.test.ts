@@ -80,6 +80,48 @@ describe("router-command integration", () => {
     expect(out.parts[0].text).toContain("/router overrides");
   });
 
+  it("/tiers renders the active preset and tiers", async () => {
+    const out = { parts: [] as any[] };
+    await hooks["command.execute.before"]({ command: "tiers", arguments: "" }, out);
+    expect(out.parts[0].text).toContain("Model Delegation Tiers");
+    expect(out.parts[0].text).toContain("Active preset");
+  });
+
+  it("/preset with no args lists presets; switching persists", async () => {
+    const list = { parts: [] as any[] };
+    await hooks["command.execute.before"]({ command: "preset", arguments: "" }, list);
+    expect(list.parts[0].text).toContain("Available Presets");
+
+    const sw = { parts: [] as any[] };
+    await hooks["command.execute.before"]({ command: "preset", arguments: "openai" }, sw);
+    expect(sw.parts[0].text).toContain("Preset switched to **openai**");
+    invalidateConfigCache();
+    expect(loadConfig().activePreset).toBe("openai");
+  });
+
+  it("/preset with an unknown name reports it", async () => {
+    const out = { parts: [] as any[] };
+    await hooks["command.execute.before"]({ command: "preset", arguments: "nope" }, out);
+    expect(out.parts[0].text).toContain("Unknown preset");
+  });
+
+  it("/budget switches mode and persists", async () => {
+    const out = { parts: [] as any[] };
+    await hooks["command.execute.before"]({ command: "budget", arguments: "budget" }, out);
+    expect(out.parts[0].text).toContain("Routing mode switched to **budget**");
+    invalidateConfigCache();
+    expect(loadConfig().activeMode).toBe("budget");
+  });
+
+  it("/bypass toggles on then off", async () => {
+    const on = { parts: [] as any[] };
+    await hooks["command.execute.before"]({ command: "bypass", arguments: "on" }, on);
+    expect(on.parts[0].text).toContain("# Bypass: ON");
+    const off = { parts: [] as any[] };
+    await hooks["command.execute.before"]({ command: "bypass", arguments: "off" }, off);
+    expect(off.parts[0].text).toContain("# Bypass: OFF");
+  });
+
   it("overrides shows both layer paths + precedence", async () => {
     const out = { parts: [] as any[] };
     await hooks["command.execute.before"]({ command: "router", arguments: "overrides" }, out);
