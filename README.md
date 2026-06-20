@@ -210,42 +210,30 @@ Add it to the `plugin` array in `~/.config/opencode/opencode.json`:
 }
 ```
 
-### Local clone
+### Local clone (for development)
+
+opencode does **not** load local plugins through `opencode.json` — a `{ "type": "local", ... }` entry there is ignored, and opencode will instead npm-install the published package by name. Local plugins are loaded as TypeScript files placed in a plugins directory:
+
+- `~/.config/opencode/plugins/` — global (loads in every project)
+- `<project>/.opencode/plugin/` — project-scoped
+
+Clone the repo, then drop a one-line **re-export shim** in one of those directories pointing at your working copy:
 
 ```bash
 git clone https://github.com/marco-jardim/opencode-model-router
 cd opencode-model-router
 npm install
-```
-In `~/.config/opencode/opencode.json`:
 
-```json
-  "plugin": [
-    [
-      "opencode-model-router",
-      {
-        "type": "local",
-        "path": "/absolute/path/to/opencode-model-router"
-      }
-    ]
-  ]
+# global: load your local copy in every project
+cat > ~/.config/opencode/plugins/opencode-model-router.ts <<EOF
+export { default } from "$PWD/src/index.ts";
+EOF
 ```
 
-Note the nested array structure. If you have other plugins, the config will look like this:
+opencode runs on Bun, which executes the TypeScript and resolves the plugin's relative imports and bundled `tiers.json` from your clone. Edit, restart opencode, and your changes are live — no build step, no publish.
 
-```json
-  "plugin": [
-    "plugin-one",
-    "plugin-two",
-    [
-      "opencode-model-router",
-      {
-        "type": "local",
-        "path": "/absolute/path/to/opencode-model-router"
-      }
-    ]
-  ]
-```
+> Make sure the package is **not** also listed by name in any `opencode.json` `plugin` array, or opencode will load the published npm version too (you'd get the plugin twice).
+
 ## Configuration
 
 The full default configuration lives in `tiers.json` at the plugin root. There are two ways to customize it.
