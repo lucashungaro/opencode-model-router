@@ -120,7 +120,7 @@ What the orchestrator sees (Anthropic preset, normal mode):
 
 ```
 ## Model Delegation Protocol
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-5/max(5x) @heavy=claude-opus-4-6/max(20x). mode:normal
+Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x). mode:normal
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable. Cheapest-first when practical.
 1.[tier:X] tag in plan→delegate X 2.plan:fast/cheap→@fast | plan:medium→@medium | plan:heavy→@heavy 3.default preference: read-only→@fast | implementation→@medium 4.orchestrate=self,execute=subagent 5.trivial(≤1 tool call,no expected follow-up)→direct,skip-delegate 6.before @heavy: gather context first(usually via @fast); if already sufficient, dispatch directly 7.if self is opus: skip-@heavy(do locally), still route broader read-only exploration to @fast 8.min(cost,adequate-tier)
@@ -180,14 +180,14 @@ With router → split:
 
 ## Recommended setup
 
-**Orchestrator**: use `claude-sonnet-4-5` (or equivalent mid-tier) as your primary/default model. Not Opus.
+**Orchestrator**: use `Claude Sonnet 4.6` (or equivalent mid-tier) as your primary/default model. Not Opus.
 
 Why: the orchestrator runs on every message, including trivial ones. Sonnet can read the delegation protocol and make routing decisions just as well as Opus. You reserve Opus for when it's genuinely needed — via `@heavy` delegation.
 
 In your `opencode.json`:
 ```json
 {
-  "model": "anthropic/claude-sonnet-4-5",
+  "model": "anthropic/claude-sonnet-4-6",
   "autoshare": false
 }
 ```
@@ -202,65 +202,84 @@ Then install and configure model-router to handle the rest.
 npm install -g opencode-model-router
 ```
 
-Add to `~/.config/opencode/opencode.json`:
+Add it to the `plugin` array in `~/.config/opencode/opencode.json`:
+
 ```json
 {
-  "plugin": {
-    "opencode-model-router": {
-      "type": "npm",
-      "package": "opencode-model-router"
-    }
-  }
+  "plugin": ["opencode-model-router"]
 }
 ```
 
 ### Local clone
+
 ```bash
-git clone https://github.com/your-username/opencode-model-router
+git clone https://github.com/marco-jardim/opencode-model-router
 cd opencode-model-router
 npm install
 ```
-
 In `~/.config/opencode/opencode.json`:
+
 ```json
-{
-  "plugin": {
-    "opencode-model-router": {
-      "type": "local",
-      "path": "/absolute/path/to/opencode-model-router"
-    }
-  }
-}
+  "plugin": [
+    [
+      "opencode-model-router",
+      {
+        "type": "local",
+        "path": "/absolute/path/to/opencode-model-router"
+      }
+    ]
+  ]
 ```
 
+Note the nested array structure. If you have other plugins, the config will look like this:
+
+```json
+  "plugin": [
+    "plugin-one",
+    "plugin-two",
+    [
+      "opencode-model-router",
+      {
+        "type": "local",
+        "path": "/absolute/path/to/opencode-model-router"
+      }
+    ]
+  ]
+```
 ## Configuration
 
-All configuration lives in `tiers.json` at the plugin root.
+All configuration lives in `tiers.json` at the plugin root. For an npm install, that file is **inside the cached package directory**, not your `~/.config/opencode/` folder — typically:
+
+```
+~/.cache/opencode/packages/opencode-model-router@latest/node_modules/opencode-model-router/tiers.json
+```
+
+> ⚠️ **You must edit this cached `tiers.json`** for opencode to pick up custom models or presets. Editing a copy elsewhere (e.g. under your global `npm` `node_modules`) has no effect, and the cached file is overwritten on each plugin update.
 
 ### Presets
 
-The plugin ships with four presets (switch with `/preset <name>`):
+The plugin ships with five presets (switch with `/preset <name>`):
 
 **anthropic** (default):
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
 | @fast | `anthropic/claude-haiku-4-5` | 1x |
-| @medium | `anthropic/claude-sonnet-4-5` (max) | 5x |
-| @heavy | `anthropic/claude-opus-4-6` (max) | 20x |
+| @medium | `anthropic/claude-sonnet-4-6` (max) | 5x |
+| @heavy | `anthropic/claude-opus-4-8` (max) | 20x |
 
 **openai**:
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
-| @fast | `openai/gpt-5.3-codex-spark` | 1x |
-| @medium | `openai/gpt-5.3-codex` | 5x |
-| @heavy | `openai/gpt-5.3-codex` (xhigh) | 20x |
+| @fast | `openai/gpt-5.4-mini-fast` | 1x |
+| @medium | `openai/gpt-5.5-fast` (high) | 5x |
+| @heavy | `openai/gpt-5.5-fast` (xhigh) | 20x |
 
 **github-copilot**:
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
 | @fast | `github-copilot/gpt-5.4-mini` | 1x |
 | @medium | `github-copilot/claude-sonnet-4.6` | 5x |
-| @heavy | `github-copilot/claude-opus-4.8` (thinking) | 20x |
+| @heavy | `github-copilot/claude-opus-4.8` (high) | 20x |
 
 **google**:
 | Tier | Model | Cost ratio |
@@ -268,6 +287,13 @@ The plugin ships with four presets (switch with `/preset <name>`):
 | @fast | `google/gemini-2.5-flash` | 1x |
 | @medium | `google/gemini-2.5-pro` | 5x |
 | @heavy | `google/gemini-3-pro-preview` | 20x |
+
+**hybrid** (mixed providers):
+| Tier | Model | Cost ratio |
+|------|-------|-----------|
+| @fast | `anthropic/claude-haiku-4-5` | 1x |
+| @medium | `openai/gpt-5.5-fast` (high) | 5x |
+| @heavy | `anthropic/claude-opus-4-8` (max) | 20x |
 
 ### Routing modes
 
@@ -459,7 +485,7 @@ Each tier (`@fast`, `@medium`, `@heavy`) has a system prompt that describes its 
     "anthropic": {
       "fast":   { "model": "anthropic/claude-haiku-4-5", ... },
       "medium": { "model": "anthropic/claude-sonnet-4-6", ... },
-      "heavy":  { "model": "anthropic/claude-opus-4-7", ... }
+      "heavy":  { "model": "anthropic/claude-opus-4-8", ... }
     }
   }
 }
