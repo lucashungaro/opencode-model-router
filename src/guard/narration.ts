@@ -1,5 +1,5 @@
 /** Regex patterns that flag progress narration without production. */
-export const NARRATION_PATTERNS: RegExp[] = [
+const NARRATION_PATTERNS: RegExp[] = [
   // "Still writing the X", "Still implementing the Y"
   /\bstill\s+(writing|implementing|working on|adding|creating|fixing|building|refactoring|handling)\s+(the\s+)?\w+/gi,
   // "Now I'll write the X", "Now writing the Y"

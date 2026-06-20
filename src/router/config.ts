@@ -93,7 +93,7 @@ function getPluginRoot(): string {
   return join(__dirname, "../.."); // src/router/ -> plugin root
 }
 
-export function configPath(): string {
+function configPath(): string {
   return join(getPluginRoot(), "tiers.json");
 }
 

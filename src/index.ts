@@ -11,14 +11,11 @@ import {
   findProjectOverride,
 } from "./router/config";
 import type { RouterConfig, TierConfig, Preset, ModeConfig } from "./router/config";
-import { fingerprintToolCall } from "./guard/fingerprint";
 import { detectNarration } from "./guard/narration";
 import {
   getActiveTiers,
-  buildDelegationProtocol,
   isClaudeModel,
   CLAUDE_TIER_PREFIX,
-  CLAUDE_ORCHESTRATOR_PREFIX,
   CLAUDE_ANTI_NARRATION,
   assembleSystemPrompt,
 } from "./router/protocol";
@@ -28,13 +25,7 @@ import {
   validateModels,
 } from "./router/catalog";
 import type { Catalog, ModelIssue } from "./router/catalog";
-import {
-  createSessionStore,
-  parseCapDirective,
-  buildCapBanner,
-  DEFAULT_TIER_CAPS,
-  READ_ONLY_TOOLS,
-} from "./router/sessions";
+import { createSessionStore, READ_ONLY_TOOLS } from "./router/sessions";
 import type { Cap, SubagentState } from "./router/sessions";
 import { createTrajectoryStore } from "./telemetry/trajectory";
 import { createGuardStore } from "./guard/store";
@@ -381,6 +372,15 @@ function buildPresetOutput(cfg: RouterConfig, args: string): string {
   return `Unknown preset: "${requestedPreset}". Available: ${Object.keys(cfg.presets).join(", ")}`;
 }
 
+/** Concatenate the text parts of a `session.prompt` response into one string. */
+function extractAssistantText(res: any): string {
+  const parts: any[] = res?.data?.parts ?? [];
+  return parts
+    .filter((p) => p?.type === "text" && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
@@ -470,12 +470,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
           parts: [{ type: "text", text: req.prompt }],
         },
       });
-      const parts: any[] = res?.data?.parts ?? [];
-      const text = parts
-        .filter((p) => p?.type === "text" && typeof p.text === "string")
-        .map((p) => p.text)
-        .join("\n");
-      return { sessionID: sid, text };
+      return { sessionID: sid, text: extractAssistantText(res) };
     } finally {
       graderSessions.delete(sid);
     }
@@ -532,6 +527,34 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   // One-shot guard so the passive "stale model" warning runs at most once per
   // plugin lifetime (re-validate on demand via /router).
   let catalogChecked = false;
+
+  // /bypass [on|off] — toggle the router off/on for the session.
+  const handleBypass = (args: string): string => {
+    const arg = args.toLowerCase();
+    bypassed = arg === "on" ? true : arg === "off" ? false : !bypassed;
+    return bypassed
+      ? "# Bypass: ON\n\nModel-router is **bypassed**. Delegation protocol, cap enforcement, and narration detection are disabled. The model will run without routing rules until you run `/bypass off` or restart OpenCode."
+      : "# Bypass: OFF\n\nModel-router is **active**. Delegation protocol and all enforcement rules are in effect.";
+  };
+
+  // /router [enforce|overrides|models|...] — uses the freshly-reloaded cfg.
+  const handleRouterCommand = async (args: string): Promise<string> => {
+    const parts = args.split(/\s+/).filter(Boolean);
+    const sub = (parts[0] ?? "").toLowerCase();
+    if (sub === "models") {
+      return buildModelsOutput(await fetchCatalog(), parts.slice(1).join(" "));
+    }
+    let text = buildRouterOutput(cfg, args);
+    // On the bare status view, surface any stale/missing models inline.
+    if (sub === "") {
+      const catalog = await fetchCatalog();
+      if (catalog) {
+        const issues = validateModels(cfg, catalog);
+        if (issues.length > 0) text += "\n\n" + formatModelIssues(issues);
+      }
+    }
+    return text;
+  };
 
   const enableDelegateTool =
     cfg.experimental?.verifiedDelegateTool === true ||
@@ -635,11 +658,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                     parts: [{ type: "text", text: taskText }],
                   },
                 });
-                const parts: any[] = res?.data?.parts ?? [];
-                producerText = parts
-                  .filter((p) => p?.type === "text" && typeof p.text === "string")
-                  .map((p) => p.text)
-                  .join("\n");
+                producerText = extractAssistantText(res);
               } catch {
                 producerText = "";
               }
@@ -731,6 +750,17 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       }) } : {}),
     },
 
+    // Grader sessions run at temperature 0 for deterministic verdicts.
+    "chat.params": async (input: any, output: any) => {
+      try {
+        if (input?.sessionID && graderSessions.has(input.sessionID)) {
+          output.temperature = cfg.enforcement?.verify?.graderTemperature ?? 0;
+        }
+      } catch {
+        // best-effort: never crash a real session
+      }
+    },
+
     // -----------------------------------------------------------------------
     // Detect subagent calls via chat.message. When the agent name matches a
     // registered tier, record the sessionID so system.transform can skip
@@ -749,16 +779,6 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
     // loop -> LLM.stream path, so by the time system.transform runs the Set
     // is fully populated and await-safe (yield* on the plugin trigger).
     // -----------------------------------------------------------------------
-    "chat.params": async (input: any, output: any) => {
-      try {
-        if (input?.sessionID && graderSessions.has(input.sessionID)) {
-          output.temperature = cfg.enforcement?.verify?.graderTemperature ?? 0;
-        }
-      } catch {
-        // best-effort: never crash a real session
-      }
-    },
-
     "chat.message": async (input: any, output: any) => {
       if (bypassed) return;
       // Re-read cfg so /preset switches take effect without restart
@@ -1138,79 +1158,35 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
     // Handle /tiers, /preset, and /budget commands
     // -----------------------------------------------------------------------
     "command.execute.before": async (input: any, output: any) => {
-      if (input.command === "tiers") {
+      const args = (input.arguments ?? "").trim();
+      const reload = () => {
         try {
           cfg = loadConfig();
         } catch {}
-        output.parts.push({
-          type: "text" as const,
-          text: buildTiersOutput(cfg),
-        });
-      }
-
-      if (input.command === "preset") {
-        try {
-          cfg = loadConfig();
-        } catch {}
-        output.parts.push({
-          type: "text" as const,
-          text: buildPresetOutput(cfg, input.arguments ?? ""),
-        });
-      }
-
-      if (input.command === "bypass") {
-        const arg = (input.arguments ?? "").trim().toLowerCase();
-        if (arg === "on") {
-          bypassed = true;
-        } else if (arg === "off") {
-          bypassed = false;
-        } else {
-          bypassed = !bypassed;
-        }
-        const status = bypassed ? "ON" : "OFF";
-        const desc = bypassed
-          ? "Model-router is **bypassed**. Delegation protocol, cap enforcement, and narration detection are disabled. The model will run without routing rules until you run `/bypass off` or restart OpenCode."
-          : "Model-router is **active**. Delegation protocol and all enforcement rules are in effect.";
-        output.parts.push({
-          type: "text" as const,
-          text: `# Bypass: ${status}\n\n${desc}`,
-        });
-      }
-
-      if (input.command === "budget") {
-        try {
-          cfg = loadConfig();
-        } catch {}
-        output.parts.push({
-          type: "text" as const,
-          text: buildBudgetOutput(cfg, input.arguments ?? ""),
-        });
-      }
-
-      if (input.command === "router") {
-        try {
-          cfg = loadConfig();
-        } catch {}
-        const args = (input.arguments ?? "").trim();
-        const parts = args.split(/\s+/).filter(Boolean);
-        const sub = (parts[0] ?? "").toLowerCase();
-        let text: string;
-        if (sub === "models") {
-          text = buildModelsOutput(await fetchCatalog(), parts.slice(1).join(" "));
-        } else {
-          text = buildRouterOutput(cfg, args);
-          // On the bare status view, surface any stale/missing models inline.
-          if (sub === "") {
-            const catalog = await fetchCatalog();
-            if (catalog) {
-              const issues = validateModels(cfg, catalog);
-              if (issues.length > 0) {
-                text += "\n\n" + formatModelIssues(issues);
-              }
-            }
-          }
-        }
+      };
+      const push = (text: string) =>
         output.parts.push({ type: "text" as const, text });
+
+      switch (input.command) {
+        case "tiers":
+          reload();
+          push(buildTiersOutput(cfg));
+          break;
+        case "preset":
+          reload();
+          push(buildPresetOutput(cfg, args));
+          break;
+        case "budget":
+          reload();
+          push(buildBudgetOutput(cfg, args));
+          break;
+        case "bypass":
+          push(handleBypass(args));
+          break;
+        case "router":
+          reload();
+          push(await handleRouterCommand(args));
+          break;
       }
     },
   };
