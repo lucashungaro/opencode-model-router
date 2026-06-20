@@ -289,6 +289,15 @@ For an npm install, `tiers.json` is **inside the cached package directory**, not
 
 > ⚠️ Editing a copy elsewhere (e.g. under your global `npm` `node_modules`) has no effect, and this cached file is **overwritten on each plugin update**. Prefer the overrides file above unless you are developing the plugin from a local clone.
 
+### Keeping models current
+
+You don't have to wait on a plugin release when providers ship new models. opencode already resolves a live model catalog (from models.dev plus your configured/authenticated providers), and the plugin reads it directly — no external fetch, no hardcoded list:
+
+- **`/router models [provider]`** lists the valid model ids for your configured providers, each annotated with the provider's default and any `deprecated`/`alpha`/`beta` status. Copy an id straight into an overrides file.
+- **Validation**: bare `/router` checks the active preset's tier models against the catalog and reports any that are missing or deprecated, with the closest valid suggestions — so a stale id surfaces immediately instead of failing silently on every subagent dispatch. The same check is logged once per session to the plugin console at startup.
+
+This is report-only: the plugin never changes your models for you. It tells you exactly what's available and what to change; you set it in the overrides file.
+
 ### Presets
 
 The plugin ships with five presets (switch with `/preset <name>`):
@@ -686,6 +695,7 @@ Advisory is the default. To change the level:
 | `/budget <mode>` | Switch routing mode (`normal`, `budget`, `quality`, `deep`) |
 | `/annotate-plan [path]` | Annotate a plan file with `[tier:X]` tags for each step |
 | `/router overrides` | Show the global + project override file paths and merge precedence |
+| `/router models [provider]` | List valid model ids from your configured providers (with defaults + deprecated flags) |
 | `/router enforce <off\|advisory\|enforced>` | Set delegation-enforcement mode (persisted) |
 | `/bypass [on\|off]` | Toggle the router off/on for the session |
 

@@ -48,7 +48,7 @@ The plugin is wired entirely through OpenCode hooks returned by the factory in `
 
 ### Module map
 
-- `src/router/` — config loading/validation (`config.ts`), protocol assembly + Claude detection/prefixes (`protocol.ts`), enforcement-mode resolution (`enforcement.ts`), subagent session tracking + cap banners (`sessions.ts`).
+- `src/router/` — config loading/validation (`config.ts`), protocol assembly + Claude detection/prefixes (`protocol.ts`), enforcement-mode resolution (`enforcement.ts`), subagent session tracking + cap banners (`sessions.ts`), model-catalog normalization/validation/suggestions (`catalog.ts`, pure — the async `client.config.providers()` fetch lives in `index.ts`).
 - `src/guard/` — Layer 1. `guards.ts` (pure policy eval), `enforce.ts` (before/after orchestration), `store.ts` (per-session state), `fingerprint.ts` (tool-call dedup), `narration.ts`, `scrub.ts`.
 - `src/verify/` — Layer 2 acceptance gate. `gate.ts` is the single accept/verify decision point (fail-closed; producer ≠ grader; grader ≥ producer tier). `dod.ts` (Definition-of-Done schema), `deterministic.ts`, `checker.ts` (graded), `dispatch.ts`, `types.ts`.
 - `src/escalate/` — Layer 3 quality-escalation ladder (retry → fast→medium→heavy, bounded by attempt/cost ceilings).

@@ -24,6 +24,11 @@ import {
 } from "./router/protocol";
 import { resolveEnforcementMode } from "./router/enforcement";
 import {
+  normalizeCatalog,
+  validateModels,
+} from "./router/catalog";
+import type { Catalog, ModelIssue } from "./router/catalog";
+import {
   createSessionStore,
   parseCapDirective,
   buildCapBanner,
@@ -158,8 +163,72 @@ function buildRouterOutput(cfg: RouterConfig, args: string): string {
     "Commands:",
     "- `/router enforce <off|advisory|enforced>` — set hard-block enforcement (persisted)",
     "- `/router overrides` — show the global + project override file paths and precedence",
+    "- `/router models [provider]` — list valid model ids from your configured providers",
     "- `/tiers`, `/preset`, `/budget`, `/bypass`, `/annotate-plan`",
   ].join("\n");
+}
+
+/** Render the live model catalog (optionally filtered to one provider). */
+function buildModelsOutput(catalog: Catalog | null, filter: string): string {
+  if (!catalog) {
+    return "Model catalog unavailable — could not query opencode's providers.";
+  }
+  if (catalog.providers.length === 0) {
+    return "No providers are configured/authenticated in opencode.";
+  }
+  const f = filter.trim().toLowerCase();
+  const providers = f
+    ? catalog.providers.filter((p) => p.id.toLowerCase() === f)
+    : catalog.providers;
+  if (providers.length === 0) {
+    return `No configured provider matches \`${filter.trim()}\`. Available: ${catalog.providers
+      .map((p) => p.id)
+      .join(", ")}.`;
+  }
+
+  const lines: string[] = ["# Model Router — available models", ""];
+  for (const p of providers) {
+    const name = p.name && p.name !== p.id ? ` (${p.name})` : "";
+    const def = p.defaultModel ? ` — default: \`${p.id}/${p.defaultModel}\`` : "";
+    lines.push(`## ${p.id}${name}${def}`);
+    const sorted = [...p.models].sort((a, b) => a.id.localeCompare(b.id));
+    if (sorted.length === 0) {
+      lines.push("- _(no models)_");
+    } else {
+      for (const m of sorted) {
+        const flag = m.status && m.status !== "active" ? ` _(${m.status})_` : "";
+        lines.push(`- \`${p.id}/${m.id}\`${flag}`);
+      }
+    }
+    lines.push("");
+  }
+  lines.push(
+    "Paste any id above into an overrides file (`/router overrides` shows where).",
+  );
+  return lines.join("\n");
+}
+
+/** Render model-validation issues for the active preset as a markdown block. */
+function formatModelIssues(issues: ModelIssue[]): string {
+  const lines: string[] = ["⚠ **Model issues in the active preset:**"];
+  for (const it of issues) {
+    const what =
+      it.kind === "provider-unknown"
+        ? `provider \`${it.providerId}\` is not configured/authenticated`
+        : it.kind === "model-deprecated"
+          ? `\`${it.ref}\` is **deprecated**`
+          : `\`${it.ref}\` was not found`;
+    let line = `- @${it.tier}: ${what}.`;
+    if (it.suggestions.length > 0) {
+      line += ` Try: ${it.suggestions.map((s) => `\`${s}\``).join(", ")}.`;
+    }
+    lines.push(line);
+  }
+  lines.push(
+    "",
+    "Set a replacement in your overrides file (`/router overrides`), then re-run `/router`.",
+  );
+  return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -448,6 +517,22 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   // current plugin lifetime (i.e., until OpenCode is restarted).
   let bypassed = false;
 
+  // Fetch + normalize opencode's live provider/model catalog. Best-effort:
+  // returns null if the client call fails (e.g. server not ready). The pure
+  // analysis (validateModels) lives in src/router/catalog.ts.
+  const fetchCatalog = async (): Promise<Catalog | null> => {
+    try {
+      const res: any = await ctx.client.config.providers();
+      return normalizeCatalog(res?.data);
+    } catch {
+      return null;
+    }
+  };
+
+  // One-shot guard so the passive "stale model" warning runs at most once per
+  // plugin lifetime (re-validate on demand via /router).
+  let catalogChecked = false;
+
   const enableDelegateTool =
     cfg.experimental?.verifiedDelegateTool === true ||
     process.env.MODEL_ROUTER_VERIFIED_DELEGATE === "1";
@@ -687,6 +772,29 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       const sid = input?.sessionID;
       if (sid && sessionStore.isSubagent(sid)) {
         trajectoryStore.ensure(sid, input?.agent ?? null);
+      }
+
+      // Once per lifetime, warn (in the plugin log) if the active preset points
+      // at models that opencode's catalog says are missing or deprecated. Only
+      // for orchestrator sessions; best-effort and never throws.
+      if (!catalogChecked && sid && !sessionStore.isSubagent(sid)) {
+        catalogChecked = true;
+        try {
+          const catalog = await fetchCatalog();
+          if (catalog) {
+            for (const it of validateModels(cfg, catalog)) {
+              const hint =
+                it.suggestions.length > 0
+                  ? ` — try ${it.suggestions.join(", ")}`
+                  : "";
+              console.warn(
+                `[model-router] @${it.tier} ${it.ref}: ${it.kind}${hint}`,
+              );
+            }
+          }
+        } catch {
+          // best-effort: never disrupt a real session
+        }
       }
     },
 
@@ -991,7 +1099,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       opencodeConfig.command["router"] = {
         template: "$ARGUMENTS",
         description:
-          "Model-router controls (e.g., /router enforce off|advisory|enforced, /router overrides)",
+          "Model-router controls (e.g., /router enforce off|advisory|enforced, /router overrides, /router models)",
       };
     },
 
@@ -1083,10 +1191,26 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         try {
           cfg = loadConfig();
         } catch {}
-        output.parts.push({
-          type: "text" as const,
-          text: buildRouterOutput(cfg, input.arguments ?? ""),
-        });
+        const args = (input.arguments ?? "").trim();
+        const parts = args.split(/\s+/).filter(Boolean);
+        const sub = (parts[0] ?? "").toLowerCase();
+        let text: string;
+        if (sub === "models") {
+          text = buildModelsOutput(await fetchCatalog(), parts.slice(1).join(" "));
+        } else {
+          text = buildRouterOutput(cfg, args);
+          // On the bare status view, surface any stale/missing models inline.
+          if (sub === "") {
+            const catalog = await fetchCatalog();
+            if (catalog) {
+              const issues = validateModels(cfg, catalog);
+              if (issues.length > 0) {
+                text += "\n\n" + formatModelIssues(issues);
+              }
+            }
+          }
+        }
+        output.parts.push({ type: "text" as const, text });
       }
     },
   };
