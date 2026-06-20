@@ -120,6 +120,7 @@
       },
       "heavy": {
         "model": "github-copilot/claude-opus-4.8",
+        "variant": "high",
         "costRatio": 20,
         "description": "Claude Opus 4.8 via GitHub Copilot for architecture, complex debugging, and security",
         "steps": 120,
