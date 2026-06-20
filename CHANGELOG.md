@@ -5,6 +5,40 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **User overrides files (update-safe config).** `~/.config/opencode/model-router-overrides.json`
+  (global) and `<repo>/.opencode/model-router-overrides.json` (project) are deep-merged over the
+  bundled `tiers.json` — specify only the keys you want to change. The project file is found by
+  searching upward to the repo root and wins over the global file, which wins over the defaults.
+  Customize models/tiers/presets without editing the cached package file (fixes the "edits to the
+  cached `tiers.json` get wiped on update / are ignored" pain).
+- **`/router overrides`** — shows the global + project override paths, which exist, and the merge
+  precedence.
+- **`/router models [provider]`** — lists valid model ids from your configured providers (with the
+  per-provider default and `deprecated`/`alpha`/`beta` flags), read from opencode's live catalog.
+- **Stale/deprecated model validation** — the active preset's tier models are checked against the
+  catalog; misses surface in bare `/router` (with closest-match suggestions) and a one-time
+  plugin-log warning, so a bad model id no longer fails silently on every subagent dispatch.
+
+### Fixed
+
+- **GitHub Copilot preset model IDs.** Corrected to valid ids (`claude-sonnet-4.6`,
+  `claude-opus-4.8` with the `high` variant; `gpt-5.4-mini` for the fast tier) so subagent dispatch
+  no longer errors with `ProviderModelNotFoundError`.
+- **Local-plugin install docs.** opencode ignores a `{ "type": "local" }` entry in `opencode.json`
+  (it npm-installs the package by name instead); documented the working mechanism — a re-export
+  shim in `~/.config/opencode/plugins/`.
+
+### Internal
+
+- Modularized the plugin: extracted pure command renderers (`src/commands/output.ts`), the model
+  catalog (`src/router/catalog.ts`), and the Layer-2 verification wiring (`src/verify/wiring.ts`);
+  split the 362-line `validateConfig` into per-section validators; trimmed per-tool-call hot paths
+  and gated record-only trajectory work. Reference docs updated; test coverage raised to ~93%.
+
 ## [1.3.0]
 
 ### Changed — advisory enforcement is now the default

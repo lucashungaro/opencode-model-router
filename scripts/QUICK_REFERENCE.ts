@@ -1,39 +1,42 @@
 /**
  * QUICK REFERENCE: Custom Slash Commands in OpenCode Plugins
- * 
- * Source: D:\git\opencode-model-router\src\index.ts
- * Reference Documentation: COMMAND_PATTERNS.md
+ *
+ * Source: src/index.ts (factory + hooks) and src/commands/output.ts (renderers).
+ * Reference Documentation: docs/COMMAND_PATTERNS.md
+ *
+ * Illustrative snippets — symbol names match the current code; this file is not
+ * compiled (scripts/ is outside the tsconfig include).
  */
 
 // ============================================================================
-// 1. COMMAND REGISTRATION (in config hook)
+// 1. COMMAND REGISTRATION (in the config hook)
 // ============================================================================
 
-// Lines 566-606 in src/index.ts
 const modelRouterPlugin = {
   config: async (opencodeConfig: any) => {
-    // ALWAYS initialize if missing
     opencodeConfig.command ??= {};
 
-    // Basic command (no arguments)
+    // No-argument command
     opencodeConfig.command["tiers"] = {
-      template: "",  // Empty string = no arguments accepted
+      template: "", // empty = no arguments
       description: "Show model delegation tiers and rules",
     };
 
     // Command with arguments
     opencodeConfig.command["preset"] = {
-      template: "$ARGUMENTS",  // $ARGUMENTS placeholder for user input
+      template: "$ARGUMENTS",
       description: "Show or switch model presets (e.g., /preset openai)",
     };
 
-    // Multi-line template (join array with \n)
+    // Subcommand-style command
+    opencodeConfig.command["router"] = {
+      template: "$ARGUMENTS",
+      description: "Model-router controls (/router enforce|overrides|models)",
+    };
+
+    // Multi-line template the model executes
     opencodeConfig.command["annotate-plan"] = {
-      template: [
-        "Line 1 of instructions",
-        "Line 2 with $ARGUMENTS",
-        'File: "$ARGUMENTS"',
-      ].join("\n"),
+      template: ["Annotate the plan with tier directives...", 'File: "$ARGUMENTS"'].join("\n"),
       description: "Annotate a plan with tier directives",
     };
   },
@@ -43,146 +46,105 @@ const modelRouterPlugin = {
 // 2. COMMAND HANDLER (command.execute.before hook)
 // ============================================================================
 
-// Lines 624-651 in src/index.ts
 const handleCommands = {
   "command.execute.before": async (input: any, output: any) => {
-    // input.command      : string  (command name without /)
-    // input.arguments    : string | null  (raw user input after command)
-    // output.parts       : MessagePart[]  (where to write responses)
+    // input.command   : string (name without /)
+    // input.arguments : string | null (raw user input)
+    // output.parts    : push { type: "text", text } to respond
+    const args = (input.arguments ?? "").trim();
+    const reload = () => { try { cfg = loadConfig(); } catch {} };
+    const push = (text: string) =>
+      output.parts.push({ type: "text" as const, text });
 
-    if (input.command === "preset") {
-      const args = input.arguments ?? "";  // Default to empty string
-
-      // Build response
-      const response = buildPresetOutput(cfg, args);
-
-      // Write to output
-      output.parts.push({
-        type: "text" as const,  // Always "text" for string responses
-        text: response,
-      });
+    switch (input.command) {
+      case "tiers":  reload(); push(buildTiersOutput(cfg)); break;
+      case "preset": reload(); push(handlePreset(args)); break;       // handler closure
+      case "budget": reload(); push(handleBudget(args)); break;
+      case "bypass":           push(handleBypass(args)); break;
+      case "router": reload(); push(await handleRouterCommand(args)); break;
     }
   },
 };
 
 // ============================================================================
-// 3. ARGUMENT PARSING PATTERN
+// 3. ARGUMENT PARSING (handler closure decides + mutates; renderers are pure)
 // ============================================================================
 
-// Lines 443-481 in src/index.ts
-function buildBudgetOutput(cfg: RouterConfig, args: string): string {
-  const requested = args.trim().toLowerCase();  // Normalize
-
-  // Empty args: show help/current state
-  if (!requested) {
-    return ["# Current State", "...", `Usage: /budget <mode>`].join("\n");
-  }
-
-  // Validate input
-  if (!cfg.modes?.[requested]) {
-    return `Unknown mode: "${requested}". Available: ${Object.keys(cfg.modes || {}).join(", ")}`;
-  }
-
-  // Process valid input
-  saveActiveMode(requested);
-  return `Switched to mode: ${requested}`;
-}
+// Closure in src/index.ts (uses the freshly-reloaded cfg):
+const handleBudget = (args: string): string => {
+  const modes = cfg.modes;
+  if (!modes || Object.keys(modes).length === 0) return buildNoModes();
+  const requested = args.trim().toLowerCase();          // normalize
+  if (!requested) return buildBudgetList(cfg);           // no args → show state
+  const mode = modes[requested];
+  if (!mode) return buildUnknownMode(modes, requested);  // validate
+  saveActiveMode(requested);                             // mutate + persist
+  return buildBudgetSwitched(mode, requested);           // confirm
+};
+// buildNoModes/buildBudgetList/buildUnknownMode/buildBudgetSwitched live in
+// src/commands/output.ts and are pure (data in → markdown out).
 
 // ============================================================================
-// 4. STATE PERSISTENCE & CACHE INVALIDATION
+// 4. STATE PERSISTENCE & CACHE INVALIDATION (src/router/config.ts)
 // ============================================================================
 
-// Lines 66-73 (cache), 227-232 (persistence), 234-248 (save & invalidate)
 let _cachedConfig: RouterConfig | null = null;
 let _configDirty = true;
 
-function invalidateConfigCache(): void {
+export function invalidateConfigCache(): void {
   _configDirty = true;
 }
 
-function loadConfig(): RouterConfig {
-  // Return cached version if valid
-  if (_cachedConfig && !_configDirty) {
-    return _cachedConfig;
-  }
-  // Otherwise reload from disk
-  const raw = JSON.parse(readFileSync(configPath(), "utf-8"));
-  _cachedConfig = validateConfig(raw);
+export function loadConfig(): RouterConfig {
+  if (_cachedConfig && !_configDirty) return _cachedConfig;
+  // Effective config = bundled tiers.json → global overrides → project
+  // overrides → persisted state (see config.ts for the full merge).
+  _cachedConfig = buildEffectiveConfig();
   _configDirty = false;
   return _cachedConfig;
 }
 
-function saveActivePreset(presetName: string): void {
+// The save* writers live in config.ts alongside writeState/invalidateConfigCache.
+export function saveActivePreset(presetName: string): void {
   const cfg = loadConfig();
   const resolved = resolvePresetName(cfg, presetName);
   if (!resolved) return;
-
   cfg.activePreset = resolved;
-
-  // Persist to state file (separate from tiers.json)
-  writeState({ activePreset: resolved });
-
-  // Force cache invalidation so next loadConfig() re-reads
-  invalidateConfigCache();
-}
-
-function writeState(patch: Partial<RouterState>): void {
-  const state = { ...readState(), ...patch };
-  const p = statePath();
-  mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, JSON.stringify(state, null, 2) + "\n", "utf-8");
+  writeState({ activePreset: resolved }); // ~/.config/opencode/opencode-model-router.state.json
+  invalidateConfigCache();                // force reload on next access
 }
 
 // ============================================================================
 // 5. SYSTEM PROMPT INJECTION (every message)
 // ============================================================================
 
-// Lines 612-619 in src/index.ts
 const systemPromptInjection = {
   "experimental.chat.system.transform": async (_input: any, output: any) => {
-    // output.system is a string[] array
-    try {
-      cfg = loadConfig();  // Uses cache (invalidated by /preset, /budget)
-    } catch {
-      // Gracefully use last known config on error
-    }
-
-    // Build and append system prompt content
-    const protocolText = buildDelegationProtocol(cfg);
-    output.system.push(protocolText);  // Appends to system prompt
+    if (bypassed) return;
+    try { cfg = loadConfig(); } catch { /* keep last known config */ }
+    // Only inject for the orchestrator, not subagent sessions:
+    if (sessionStore.isSubagent(_input?.sessionID)) return;
+    const enfOn = resolveEnforcementMode({ config: cfg, env: process.env }).mode !== "off";
+    // assembleSystemPrompt wraps buildDelegationProtocol + Claude prefixes + DoD section.
+    output.system.push(assembleSystemPrompt(cfg, orchestratorModel, enfOn));
   },
 };
 
 // ============================================================================
-// 6. USER FEEDBACK FORMAT (Markdown)
+// 6. USER FEEDBACK (pure renderers in src/commands/output.ts)
 // ============================================================================
 
-// Lines 513-521 in src/index.ts
-function buildPresetOutput(cfg: RouterConfig, args: string): string {
-  if (!args) {
-    // Show available options
-    const lines = ["# Available Presets\n"];
-    for (const [name, tiers] of Object.entries(cfg.presets)) {
-      const active = name === cfg.activePreset ? " <- active" : "";
-      lines.push(`- **${name}**${active}: ${description}`);
-    }
-    lines.push(`\nSwitch with: \`/preset <name>\``);
-    return lines.join("\n");
+export function buildPresetList(cfg: RouterConfig): string {
+  const lines = ["# Available Presets\n"];
+  for (const [name, tiers] of Object.entries(cfg.presets)) {
+    const active = name === cfg.activePreset ? " <- active" : "";
+    const models = Object.entries(tiers)
+      .map(([tier, t]) => `${tier}: ${t.model.split("/").pop()}`)
+      .join(", ");
+    lines.push(`- **${name}**${active}: ${models}`);
   }
-
-  // Switch preset
-  const resolved = resolvePresetName(cfg, args);
-  if (resolved) {
-    saveActivePreset(resolved);
-    return [
-      `Preset switched to **${resolved}**.`,  // Bold markdown
-      "",
-      "Selection is now persisted in ~/.config/opencode/opencode-model-router.state.json.",
-      "System prompt delegation rules update immediately.",
-    ].join("\n");
-  }
-
-  return `Unknown preset: "${args}". Available: ${Object.keys(cfg.presets).join(", ")}`;
+  lines.push(`\nSwitch with: \`/preset <name>\``);
+  return lines.join("\n");
 }
 
 // ============================================================================
@@ -195,7 +157,6 @@ const MinimalPlugin: Plugin = async (_ctx: PluginInput) => {
   let state = { mode: "normal" };
 
   return {
-    // Register command
     config: async (opencodeConfig: any) => {
       opencodeConfig.command ??= {};
       opencodeConfig.command["mycommand"] = {
@@ -204,33 +165,18 @@ const MinimalPlugin: Plugin = async (_ctx: PluginInput) => {
       };
     },
 
-    // Handle command
     "command.execute.before": async (input: any, output: any) => {
-      if (input.command === "mycommand") {
-        const args = (input.arguments ?? "").trim();
+      if (input.command !== "mycommand") return;
+      const args = (input.arguments ?? "").trim();
+      const push = (text: string) =>
+        output.parts.push({ type: "text" as const, text });
 
-        if (!args) {
-          output.parts.push({
-            type: "text" as const,
-            text: `Current mode: ${state.mode}\nUsage: /mycommand <mode>`,
-          });
-          return;
-        }
-
-        if (!["normal", "fast", "slow"].includes(args)) {
-          output.parts.push({
-            type: "text" as const,
-            text: `Unknown mode. Available: normal, fast, slow`,
-          });
-          return;
-        }
-
-        state.mode = args;
-        output.parts.push({
-          type: "text" as const,
-          text: `Mode changed to: **${args}**`,
-        });
+      if (!args) return push(`Current mode: ${state.mode}\nUsage: /mycommand <mode>`);
+      if (!["normal", "fast", "slow"].includes(args)) {
+        return push(`Unknown mode. Available: normal, fast, slow`);
       }
+      state.mode = args;
+      push(`Mode changed to: **${args}**`);
     },
   };
 };
@@ -239,18 +185,20 @@ const MinimalPlugin: Plugin = async (_ctx: PluginInput) => {
 // KEY TAKEAWAYS
 // ============================================================================
 /*
-1. REGISTER: opencodeConfig.command["name"] = { template: string, description: string }
-   - template: "" (no args) or "$ARGUMENTS" (with args) or multi-line string
-   
-2. HANDLE: "command.execute.before" hook checks input.command and input.arguments
-   - Push responses to output.parts array: { type: "text" as const, text: string }
-   - NO return value needed — work with output object directly
-   
-3. PARSE ARGS: Trim, normalize, validate, provide helpful errors
-   
-4. PERSIST STATE: Use separate state file, cache config with invalidation
-   
-5. INJECT SYSTEM: Use "experimental.chat.system.transform" to modify output.system
-   
-6. USER FEEDBACK: Markdown format (bold **text**, code `text`, bullets -), no tui.showToast
+1. REGISTER: opencodeConfig.command["name"] = { template, description }
+   - template: "" (no args) | "$ARGUMENTS" | multi-line string the model runs
+
+2. DISPATCH: "command.execute.before" — switch on input.command; read
+   input.arguments; push { type: "text", text } to output.parts.
+
+3. SEPARATE concerns: handler closures decide + persist; rendering is pure
+   (src/commands/output.ts).
+
+4. PERSIST: save* helpers in src/router/config.ts → writeState() +
+   invalidateConfigCache(); state file is separate from tiers.json.
+
+5. INJECT: "experimental.chat.system.transform" → assembleSystemPrompt(...);
+   skip subagent sessions.
+
+6. FEEDBACK: Markdown strings; no tui.showToast().
 */
