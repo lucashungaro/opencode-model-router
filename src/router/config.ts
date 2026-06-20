@@ -97,6 +97,21 @@ export function configPath(): string {
   return join(getPluginRoot(), "tiers.json");
 }
 
+/**
+ * Path to the optional user overrides file. Lives in the stable opencode config
+ * dir (next to the state file) so it survives plugin updates — unlike the
+ * bundled tiers.json, which sits in the cache dir and is overwritten on every
+ * update. Anything here is deep-merged over the bundled config.
+ */
+export function overridePath(): string {
+  return join(
+    homedir(),
+    ".config",
+    "opencode",
+    "model-router-overrides.json",
+  );
+}
+
 export function statePath(): string {
   return join(
     homedir(),
@@ -407,13 +422,88 @@ export function validateConfig(raw: unknown): RouterConfig {
   return raw as RouterConfig;
 }
 
+/**
+ * Recursively merge `override` onto `base`. Plain objects merge key-by-key;
+ * arrays and scalars are replaced wholesale (so e.g. an overridden `rules` or
+ * `whenToUse` list replaces rather than appends). `undefined` values in the
+ * override are skipped so they never blow away a base value.
+ */
+export function deepMerge(base: unknown, override: unknown): unknown {
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+
+  if (!isPlainObject(base) || !isPlainObject(override)) {
+    return override;
+  }
+
+  const result: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined) continue;
+    result[key] =
+      key in result && isPlainObject(result[key]) && isPlainObject(value)
+        ? deepMerge(result[key], value)
+        : value;
+  }
+  return result;
+}
+
+/**
+ * Read and parse the optional user overrides file. Returns the parsed object,
+ * or undefined when the file is absent/unreadable/invalid. Parse and shape
+ * errors are surfaced via console.warn (never thrown) so a typo in the
+ * overrides file can never brick opencode startup — but the user still gets a
+ * visible reason why their override was ignored.
+ */
+function readOverrides(): Record<string, unknown> | undefined {
+  const op = overridePath();
+  let text: string;
+  try {
+    if (!existsSync(op)) return undefined;
+    text = readFileSync(op, "utf-8");
+  } catch {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      console.warn(
+        `[model-router] ignoring ${op}: expected a JSON object at root`,
+      );
+      return undefined;
+    }
+    return parsed as Record<string, unknown>;
+  } catch (err) {
+    console.warn(
+      `[model-router] ignoring ${op}: invalid JSON — ${(err as Error).message}`,
+    );
+    return undefined;
+  }
+}
+
 export function loadConfig(): RouterConfig {
   if (_cachedConfig && !_configDirty) {
     return _cachedConfig;
   }
 
-  const raw = JSON.parse(readFileSync(configPath(), "utf-8"));
-  const cfg = validateConfig(raw);
+  const base = JSON.parse(readFileSync(configPath(), "utf-8"));
+  const overrides = readOverrides();
+
+  let cfg: RouterConfig;
+  if (overrides) {
+    try {
+      cfg = validateConfig(deepMerge(base, overrides));
+    } catch (err) {
+      // A bad override must never brick startup: fall back to the bundled
+      // config and tell the user why their override was dropped.
+      console.warn(
+        `[model-router] ignoring ${overridePath()}: merged config is invalid — ${(err as Error).message}`,
+      );
+      cfg = validateConfig(base);
+    }
+  } else {
+    cfg = validateConfig(base);
+  }
 
   try {
     if (existsSync(statePath())) {

@@ -248,13 +248,35 @@ Note the nested array structure. If you have other plugins, the config will look
 ```
 ## Configuration
 
-All configuration lives in `tiers.json` at the plugin root. For an npm install, that file is **inside the cached package directory**, not your `~/.config/opencode/` folder — typically:
+The full default configuration lives in `tiers.json` at the plugin root. There are two ways to customize it.
+
+### Recommended: overrides file (survives updates)
+
+Create `~/.config/opencode/model-router-overrides.json`. Anything you put there is **deep-merged** over the bundled `tiers.json` on load — you only specify the keys you want to change; everything else falls back to the defaults. This file lives in your stable opencode config dir, so it is **not** wiped when the plugin updates.
+
+```json
+{
+  "presets": {
+    "github-copilot": {
+      "heavy": { "model": "github-copilot/claude-opus-4.8", "variant": "high" }
+    }
+  }
+}
+```
+
+The example above changes only the `@heavy` model/variant for the `github-copilot` preset; every other tier, preset, and setting keeps its bundled value. You can also override `costRatio`, `tierCaps`, `rules`, `modes`, `enforcement`, add an entirely new preset, etc. — any top-level key from `tiers.json`.
+
+Merge semantics: objects merge recursively; arrays and scalars are replaced wholesale (so an overridden `rules`/`whenToUse` list *replaces* the default, it does not append). If the file is missing, malformed, or produces an invalid config, the plugin logs a `[model-router]` warning and falls back to the bundled defaults — a typo can never break startup.
+
+### Advanced: edit the bundled `tiers.json` directly
+
+For an npm install, `tiers.json` is **inside the cached package directory**, not your `~/.config/opencode/` folder — typically:
 
 ```
 ~/.cache/opencode/packages/opencode-model-router@latest/node_modules/opencode-model-router/tiers.json
 ```
 
-> ⚠️ **You must edit this cached `tiers.json`** for opencode to pick up custom models or presets. Editing a copy elsewhere (e.g. under your global `npm` `node_modules`) has no effect, and the cached file is overwritten on each plugin update.
+> ⚠️ Editing a copy elsewhere (e.g. under your global `npm` `node_modules`) has no effect, and this cached file is **overwritten on each plugin update**. Prefer the overrides file above unless you are developing the plugin from a local clone.
 
 ### Presets
 
