@@ -96,7 +96,7 @@
       "fast": {
         "model": "github-copilot/claude-haiku-4.5",
         "costRatio": 1,
-        "description": "Claude Haiku 4.5 via GitHub Copilot for fast exploration and simple tasks",
+        "description": "Small model for fast exploration and simple tasks",
         "steps": 30,
         "whenToUse": [
           "Codebase exploration and search",
@@ -108,7 +108,7 @@
       "medium": {
         "model": "github-copilot/claude-sonnet-4.6",
         "costRatio": 5,
-        "description": "Claude Sonnet 4.6 via GitHub Copilot for implementation, refactoring, and tests",
+        "description": "Medium model for implementation, refactoring, and tests",
         "steps": 50,
         "whenToUse": [
           "Feature implementation",
@@ -122,7 +122,7 @@
         "model": "github-copilot/claude-opus-4.8",
         "variant": "high",
         "costRatio": 20,
-        "description": "Claude Opus 4.8 via GitHub Copilot for architecture, complex debugging, and security",
+        "description": "Large model for architecture, complex debugging, and security",
         "steps": 120,
         "whenToUse": [
           "Architecture decisions",
