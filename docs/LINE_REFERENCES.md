@@ -8,11 +8,12 @@ Reference index for maintainers. All paths relative to the package root. Referen
 
 ## Router
 
-- **`src/router/config.ts`** — loads, validates, and caches the effective config. Layers, lowest→highest priority: bundled `tiers.json` → global overrides (`~/.config/opencode/model-router-overrides.json`) → project overrides (`<repo>/.opencode/model-router-overrides.json`, located by upward search) → persisted state. Also owns `deepMerge`, the per-section `validateConfig` helpers, and the `saveActivePreset`/`saveActiveMode`/`saveEnforcementMode` state writers.
+- **`src/router/config.ts`** — loads, validates, and caches the effective config. Layers, lowest→highest priority: bundled `tiers.json` → global overrides (`~/.config/opencode/opencode-model-router.overrides.jsonc`) → project overrides (`<repo>/.opencode/opencode-model-router.overrides.jsonc`, located by upward search) → persisted state. Also owns `deepMerge`, the per-section `validateConfig` helpers, and the `saveActivePreset`/`saveActiveMode`/`saveEnforcementMode` state writers.
 - **`src/router/protocol.ts`** — builds the orchestrator delegation protocol string and tier system prompt strings, including Claude adversarial prefixes and anti-narration clauses.
 - **`src/router/sessions.ts`** — tracks per-session state: tier, read-only call counts, cap overrides, enforcement context.
 - **`src/router/enforcement.ts`** — reads enforcement config; decides whether a session is subject to enforcement and at what mode.
 - **`src/router/catalog.ts`** — pure normalization/validation of opencode's live provider/model catalog (`config.providers()`); powers `/router models` and the stale/deprecated-model warnings. The async fetch lives in `index.ts`.
+- **`src/router/jsonc.ts`** — pure, zero-dependency JSONC support (`stripJsonc`/`parseJsonc`): strips comments + trailing commas (string-aware) so the override files can use them.
 
 ## Commands (presentation)
 

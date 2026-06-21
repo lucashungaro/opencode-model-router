@@ -96,8 +96,8 @@ opencode-model-router/
 │   └── modes:   normal, budget, quality, deep
 └── ~/.config/opencode/
     ├── opencode-model-router.state.json        — persisted preset/mode/enforcement
-    └── model-router-overrides.json             — optional global overrides (deep-merged)
-        (+ <repo>/.opencode/model-router-overrides.json for project overrides)
+    └── opencode-model-router.overrides.jsonc             — optional global overrides (deep-merged)
+        (+ <repo>/.opencode/opencode-model-router.overrides.jsonc for project overrides)
 ```
 
 ---

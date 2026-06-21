@@ -76,8 +76,8 @@ Other commands follow the same shape: `tiers` → `buildTiersOutput`; `budget` �
 │  if (_cachedConfig && !_configDirty) return cache               │
 │  else build effective config (lowest→highest priority):         │
 │    bundled tiers.json                                           │
-│    → global  ~/.config/opencode/model-router-overrides.json     │
-│    → project <repo>/.opencode/model-router-overrides.json       │
+│    → global  ~/.config/opencode/opencode-model-router.overrides.jsonc     │
+│    → project <repo>/.opencode/opencode-model-router.overrides.jsonc       │
 │    → persisted state (active preset/mode/enforcement)           │
 │  cache it; _configDirty = false                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -265,8 +265,8 @@ opencode-model-router/
 │
 └── ~/.config/opencode/
     ├── opencode-model-router.state.json   # active preset/mode/enforcement
-    └── model-router-overrides.json        # optional global overrides (deep-merged)
-        # project overrides: <repo>/.opencode/model-router-overrides.json
+    └── opencode-model-router.overrides.jsonc        # optional global overrides (deep-merged)
+        # project overrides: <repo>/.opencode/opencode-model-router.overrides.jsonc
 ```
 
 ---

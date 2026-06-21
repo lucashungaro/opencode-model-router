@@ -136,6 +136,21 @@ describe("loadConfig — user overrides file", () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
+  it("supports comments and trailing commas in the overrides file", () => {
+    writeOverride(`{
+      // override just the heavy model for github-copilot
+      "presets": {
+        "github-copilot": {
+          "heavy": { "model": "github-copilot/custom-opus" }, /* trailing comma → */
+        },
+      },
+    }`);
+    expect(loadConfig().presets["github-copilot"]!.heavy!.model).toBe(
+      "github-copilot/custom-opus",
+    );
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
   it("can add an entirely new preset", () => {
     writeOverride(
       JSON.stringify({
@@ -247,9 +262,9 @@ describe("loadConfig — global + project override hierarchy", () => {
     writeFileSync(p, JSON.stringify(obj), "utf-8");
   }
 
-  it("localOverridePath resolves to <cwd>/.opencode/model-router-overrides.json", () => {
+  it("localOverridePath resolves to <cwd>/.opencode/opencode-model-router.overrides.jsonc", () => {
     expect(localOverridePath()).toBe(
-      join(process.cwd(), ".opencode", "model-router-overrides.json"),
+      join(process.cwd(), ".opencode", "opencode-model-router.overrides.jsonc"),
     );
   });
 
@@ -368,7 +383,7 @@ describe("findProjectOverride — upward search", () => {
 
   it("finds the project file from a nested subdirectory", () => {
     const project = join(tmpRoot, "repo");
-    const file = join(project, ".opencode", "model-router-overrides.json");
+    const file = join(project, ".opencode", "opencode-model-router.overrides.jsonc");
     write(file, { defaultTier: "fast" });
     mkdirSync(join(project, ".git"), { recursive: true });
     const deep = join(project, "src", "feature", "deep");
@@ -380,7 +395,7 @@ describe("findProjectOverride — upward search", () => {
 
   it("does not escape the project root (stops at .git)", () => {
     // An override above the repo root must NOT be picked up.
-    write(join(tmpRoot, ".opencode", "model-router-overrides.json"), {
+    write(join(tmpRoot, ".opencode", "opencode-model-router.overrides.jsonc"), {
       defaultTier: "heavy",
     });
     const project = join(tmpRoot, "repo");
@@ -394,7 +409,7 @@ describe("findProjectOverride — upward search", () => {
 
   it("loadConfig applies the project override when launched from a subdir", () => {
     const project = join(tmpRoot, "repo");
-    write(join(project, ".opencode", "model-router-overrides.json"), {
+    write(join(project, ".opencode", "opencode-model-router.overrides.jsonc"), {
       presets: { anthropic: { fast: { model: "anthropic/from-subdir" } } },
     });
     mkdirSync(join(project, ".git"), { recursive: true });

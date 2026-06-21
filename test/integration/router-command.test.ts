@@ -127,7 +127,7 @@ describe("router-command integration", () => {
     await hooks["command.execute.before"]({ command: "router", arguments: "overrides" }, out);
     const text = out.parts[0].text;
     expect(text).toContain("config overrides");
-    expect(text).toContain("model-router-overrides.json"); // global path
+    expect(text).toContain("opencode-model-router.overrides.jsonc"); // global path
     expect(text).toContain(".opencode"); // project path
     expect(text).toContain("Active preset");
   });

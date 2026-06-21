@@ -2,6 +2,14 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseJsonc } from "./jsonc";
+
+/**
+ * Filename of the optional user overrides file (global and project copies share
+ * it). `.jsonc` so comments and trailing commas are allowed; mirrors the
+ * `opencode-model-router.*` prefix of the state file.
+ */
+export const OVERRIDE_FILENAME = "opencode-model-router.overrides.jsonc";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,32 +106,28 @@ function configPath(): string {
 }
 
 /**
- * Path to the optional user overrides file. Lives in the stable opencode config
+ * Path to the global user overrides file. Lives in the stable opencode config
  * dir (next to the state file) so it survives plugin updates — unlike the
  * bundled tiers.json, which sits in the cache dir and is overwritten on every
  * update. Anything here is deep-merged over the bundled config.
  */
 export function overridePath(): string {
-  return join(
-    homedir(),
-    ".config",
-    "opencode",
-    "model-router-overrides.json",
-  );
+  return join(homedir(), ".config", "opencode", OVERRIDE_FILENAME);
 }
 
 /**
- * Default location of the project-local overrides file (`.opencode/
- * model-router-overrides.json` in the current working directory). This is the
- * path to *create* the file at; the actual lookup walks upward — see
- * {@link findProjectOverride}. Used for display when no project file is found.
+ * Default location of the project-local overrides file
+ * (`.opencode/opencode-model-router.overrides.jsonc` in the current working
+ * directory). This is the path to *create* the file at; the actual lookup walks
+ * upward — see {@link findProjectOverride}. Used for display when no project
+ * file is found.
  *
  * The project file is deep-merged *after* (and therefore wins over) the global
  * overrides file, so a team can commit a shared file that unifies routing for
  * the project on top of each member's personal global file.
  */
 export function localOverridePath(): string {
-  return join(process.cwd(), ".opencode", "model-router-overrides.json");
+  return join(process.cwd(), ".opencode", OVERRIDE_FILENAME);
 }
 
 /**
@@ -138,7 +142,7 @@ export function localOverridePath(): string {
 export function findProjectOverride(): string | undefined {
   let dir = process.cwd();
   for (;;) {
-    const candidate = join(dir, ".opencode", "model-router-overrides.json");
+    const candidate = join(dir, ".opencode", OVERRIDE_FILENAME);
     if (existsSync(candidate)) return candidate;
     // Reached the project root without finding the file — stop here.
     if (existsSync(join(dir, ".git"))) return undefined;
@@ -460,7 +464,7 @@ function readOverridesAt(op: string): Record<string, unknown> | undefined {
   }
 
   try {
-    const parsed = JSON.parse(text) as unknown;
+    const parsed = parseJsonc(text) as unknown;
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       console.warn(
         `[model-router] ignoring ${op}: expected a JSON object at root`,
@@ -470,7 +474,7 @@ function readOverridesAt(op: string): Record<string, unknown> | undefined {
     return parsed as Record<string, unknown>;
   } catch (err) {
     console.warn(
-      `[model-router] ignoring ${op}: invalid JSON — ${(err as Error).message}`,
+      `[model-router] ignoring ${op}: invalid JSONC — ${(err as Error).message}`,
     );
     return undefined;
   }

@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **User overrides files (update-safe config).** `~/.config/opencode/model-router-overrides.json`
-  (global) and `<repo>/.opencode/model-router-overrides.json` (project) are deep-merged over the
-  bundled `tiers.json` — specify only the keys you want to change. The project file is found by
+- **User overrides files (update-safe config).** `~/.config/opencode/opencode-model-router.overrides.jsonc`
+  (global) and `<repo>/.opencode/opencode-model-router.overrides.jsonc` (project) are deep-merged over the
+  bundled `tiers.json` — specify only the keys you want to change. `.jsonc`, so `//`/`/* */` comments and
+  trailing commas are allowed. The project file is found by
   searching upward to the repo root and wins over the global file, which wins over the defaults.
   Customize models/tiers/presets without editing the cached package file (fixes the "edits to the
   cached `tiers.json` get wiped on update / are ignored" pain).

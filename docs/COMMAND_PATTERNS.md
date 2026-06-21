@@ -200,8 +200,8 @@ Patterns: markdown (`**bold**`, `` `code` ``, `-` lists); build multi-line as an
 ```
 
 - **Bundled defaults:** the cached `tiers.json`.
-- **Global overrides:** `~/.config/opencode/model-router-overrides.json`.
-- **Project overrides:** `<repo>/.opencode/model-router-overrides.json` (found by upward search; deep-merged over global).
+- **Global overrides:** `~/.config/opencode/opencode-model-router.overrides.jsonc`.
+- **Project overrides:** `<repo>/.opencode/opencode-model-router.overrides.jsonc` (found by upward search; deep-merged over global).
 - **Persisted UI state:** `~/.config/opencode/opencode-model-router.state.json` (active preset/mode/enforcement only).
 
 ---
