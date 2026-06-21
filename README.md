@@ -263,6 +263,39 @@ The project file deep-merges over (and wins against) the global file, which in t
 
 The example above changes only the `@heavy` model/variant for the `github-copilot` preset; every other tier, preset, and setting keeps its bundled value. You can also override `costRatio`, `tierCaps`, `rules`, `modes`, `enforcement`, add an entirely new preset, etc. — any top-level key from `tiers.json`.
 
+A fuller example overriding several keys at once (`.jsonc`, so comments and trailing commas are fine):
+
+```jsonc
+{
+  // Point one tier at a different model and give it a bigger step budget
+  "presets": {
+    "github-copilot": {
+      "heavy": { "model": "github-copilot/claude-opus-4.8", "variant": "high", "steps": 160 },
+    },
+  },
+
+  // Tighten the per-dispatch read-only caps (defaults are 8 / 5 / 3)
+  "tierCaps": { "fast": 6, "medium": 4, "heavy": 2 },
+
+  // Turn enforcement up to hard-block, and cap escalation attempts
+  "enforcement": {
+    "mode": "enforced",
+    "escalate": { "maxTotalAttempts": 3 },
+  },
+
+  // Tweak a routing mode — objects deep-merge, so unspecified fields keep their defaults
+  "modes": {
+    "deep": { "description": "Deep analysis — heavy-first, long runs" },
+  },
+
+  // Arrays REPLACE (they do not append): this becomes the entire ruleset
+  "rules": [
+    "default preference: read-only → @fast; implementation → @medium",
+    "min(cost, adequate-tier)",
+  ],
+}
+```
+
 Run `/router overrides` to see both file paths, whether each exists, and the precedence order.
 
 Merge semantics: objects merge recursively; arrays and scalars are replaced wholesale (so an overridden `rules`/`whenToUse` list *replaces* the default, it does not append). If a file is missing, malformed, or produces an invalid config, the plugin logs a `[model-router]` warning and drops just that layer (keeping the others) — a typo in one file can never break startup or discard a valid file.
