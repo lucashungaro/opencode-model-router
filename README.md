@@ -302,23 +302,27 @@ Merge semantics: objects merge recursively; arrays and scalars are replaced whol
 
 #### Defining a whole new preset
 
-An overrides file can add a brand-new preset, not just tweak the bundled ones. `model` is the only required field per tier — `description`, `whenToUse`, `costRatio`, `steps`, etc. are all optional:
+An overrides file can add a brand-new preset, not just tweak the bundled ones. `model` is the only required field per tier. `costRatio` and `steps` are optional — when omitted they fall back to the conventional **`1` / `5` / `20`** and **`30` / `50` / `120`** (by tier name, the same values the bundled presets use); `description`/`whenToUse` are display-only.
 
 ```jsonc
 {
   "presets": {
-    "local": {
-      "fast":   { "model": "local/qwen3.6-27b-mtp" },
-      "medium": { "model": "local/qwen3.6-27b-mtp" },
-      "heavy":  { "model": "local/qwen3.6-27b-mtp" },
+    "openrouter": {
+      "fast":   { "model": "openrouter/deepseek/deepseek-v3.2" },
+      "medium": { "model": "openrouter/qwen/qwen3-coder", "costRatio": 3, "steps": 60 },
+      "heavy":  { "model": "openrouter/google/gemini-3-pro", "costRatio": 9, "steps": 140 },
     },
   },
-  // make it the active preset (or switch at runtime with `/preset local`)
-  "activePreset": "local",
+  // make it the active preset (or switch at runtime with `/preset openrouter`)
+  "activePreset": "openrouter",
 }
 ```
 
-Restart opencode after adding a new preset so its tier subagents get registered. (The provider — `local` here — must itself be configured in your `opencode.json`.)
+`@fast` omits `costRatio`/`steps`, so it gets the defaults (`1` / `30`); `@medium` and `@heavy` set their own to match their real economics. **Set `costRatio` whenever your models' relative costs differ from the default ladder** — it's the price signal the orchestrator uses to pick the cheapest adequate tier. (Routing by *task type* — `@fast`=read-only, `@medium`=implementation, `@heavy`=architecture — comes from the shared `taskPatterns`/`rules`, so it works for any preset automatically.)
+
+The effective values, including any defaults, are shown by `/tiers`.
+
+Restart opencode after adding a new preset so its tier subagents get registered. (Each model's provider must itself be configured in your `opencode.json`.)
 
 ### Keeping models current
 

@@ -507,6 +507,34 @@ function collectOverrideLayers(): OverrideLayer[] {
   return layers;
 }
 
+/**
+ * Canonical per-tier defaults, keyed by the conventional tier names. These are
+ * the same values every bundled preset uses, so a preset defined in an overrides
+ * file with only `model` per tier gets a sensible cost ladder and turn budgets.
+ */
+const TIER_DEFAULTS: Record<string, { costRatio: number; steps: number }> = {
+  fast: { costRatio: 1, steps: 30 },
+  medium: { costRatio: 5, steps: 50 },
+  heavy: { costRatio: 20, steps: 120 },
+};
+const FALLBACK_TIER_DEFAULTS = { costRatio: 1, steps: 50 };
+
+/**
+ * Fill in `costRatio`/`steps` for any tier that omits them, by tier name. Runs
+ * after merge so override-defined presets behave well without restating the
+ * conventional values; the effective numbers then show up in `/tiers` and the
+ * injected protocol. Bundled presets already set both, so this is a no-op there.
+ */
+function applyTierDefaults(cfg: RouterConfig): void {
+  for (const preset of Object.values(cfg.presets)) {
+    for (const [tierName, tier] of Object.entries(preset)) {
+      const d = TIER_DEFAULTS[tierName] ?? FALLBACK_TIER_DEFAULTS;
+      if (tier.costRatio === undefined) tier.costRatio = d.costRatio;
+      if (tier.steps === undefined) tier.steps = d.steps;
+    }
+  }
+}
+
 export function loadConfig(): RouterConfig {
   if (_cachedConfig && !_configDirty) {
     return _cachedConfig;
@@ -573,6 +601,8 @@ export function loadConfig(): RouterConfig {
   } catch {
     // Ignore state read errors and keep tiers.json defaults
   }
+
+  applyTierDefaults(cfg);
 
   _cachedConfig = cfg;
   _configDirty = false;

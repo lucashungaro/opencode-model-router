@@ -168,6 +168,12 @@ describe("loadConfig — user overrides file", () => {
     expect(cfg.activePreset).toBe("local");
     expect(cfg.presets.local!.heavy!.model).toBe("local/qwen3.6-27b-mtp");
     expect(warnSpy).not.toHaveBeenCalled(); // no validation failure → layer not dropped
+
+    // name-based defaults are filled in for the omitted costRatio/steps
+    const local = cfg.presets.local!;
+    expect([local.fast!.costRatio, local.fast!.steps]).toEqual([1, 30]);
+    expect([local.medium!.costRatio, local.medium!.steps]).toEqual([5, 50]);
+    expect([local.heavy!.costRatio, local.heavy!.steps]).toEqual([20, 120]);
   });
 
   it("warns and falls back to bundled config on invalid JSON", () => {
