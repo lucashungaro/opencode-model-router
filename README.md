@@ -324,6 +324,8 @@ The effective values, including any defaults, are shown by `/tiers`.
 
 Restart opencode after adding a new preset so its tier subagents get registered. (Each model's provider must itself be configured in your `opencode.json`.)
 
+> **`activePreset` / `activeMode` / `enforcement.mode` in an override file are _defaults_.** Runtime selections — `/preset`, `/budget`, `/router enforce` — are persisted to the state file (`~/.config/opencode/opencode-model-router.state.json`), which is applied **after** the override files and therefore wins. So the override's `activePreset` takes effect until you switch at runtime; if it ever "isn't taking", it's because a past `/preset` left a value in the state file — run `/preset <name>` again or delete that file. (The state file is machine-written, so the plugin never rewrites your hand-authored, commented override file.)
+
 ### Keeping models current
 
 You don't have to wait on a plugin release when providers ship new models. opencode already resolves a live model catalog (from models.dev plus your configured/authenticated providers), and the plugin reads it directly — no external fetch, no hardcoded list:
