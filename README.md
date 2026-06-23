@@ -300,6 +300,26 @@ Run `/router overrides` to see both file paths, whether each exists, and the pre
 
 Merge semantics: objects merge recursively; arrays and scalars are replaced wholesale (so an overridden `rules`/`whenToUse` list *replaces* the default, it does not append). If a file is missing, malformed, or produces an invalid config, the plugin logs a `[model-router]` warning and drops just that layer (keeping the others) — a typo in one file can never break startup or discard a valid file.
 
+#### Defining a whole new preset
+
+An overrides file can add a brand-new preset, not just tweak the bundled ones. `model` is the only required field per tier — `description`, `whenToUse`, `costRatio`, `steps`, etc. are all optional:
+
+```jsonc
+{
+  "presets": {
+    "local": {
+      "fast":   { "model": "local/qwen3.6-27b-mtp" },
+      "medium": { "model": "local/qwen3.6-27b-mtp" },
+      "heavy":  { "model": "local/qwen3.6-27b-mtp" },
+    },
+  },
+  // make it the active preset (or switch at runtime with `/preset local`)
+  "activePreset": "local",
+}
+```
+
+Restart opencode after adding a new preset so its tier subagents get registered. (The provider — `local` here — must itself be configured in your `opencode.json`.)
+
 ### Keeping models current
 
 You don't have to wait on a plugin release when providers ship new models. opencode already resolves a live model catalog (from models.dev plus your configured/authenticated providers), and the plugin reads it directly — no external fetch, no hardcoded list:

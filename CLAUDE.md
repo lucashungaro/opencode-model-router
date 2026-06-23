@@ -35,7 +35,7 @@ There is no lint script and no build/bundle step — the package ships raw `src/
 
 ## Architecture
 
-`tiers.json` (plugin root) is the bundled configuration surface: presets (anthropic/openai/github-copilot/google/hybrid), tier models + `costRatio`, `modes` (normal/budget/quality/deep), `rules`, `taskPatterns`, `tierCaps`, `tierPrompts`, `fallback`, and `enforcement`. `src/router/config.ts` loads, validates (strict, throws on malformed `tiers.json`), and caches it. The effective config is `tiers.json` deep-merged with the override files and overlaid with the persisted state — see **Config layering** above.
+`tiers.json` (plugin root) is the bundled configuration surface: presets (anthropic/openai/github-copilot/google/hybrid), tier models + `costRatio`, `modes` (normal/budget/quality/deep), `rules`, `taskPatterns`, `tierCaps`, `tierPrompts`, `fallback`, and `enforcement`. `src/router/config.ts` loads, validates (strict, throws on malformed `tiers.json`), and caches it. Only `model` is required per tier (everything else — `description`, `whenToUse`, `costRatio`, `steps`, `variant` — is optional), so an overrides file can define a whole new preset with just `{ "model": "..." }` tiers. The effective config is `tiers.json` deep-merged with the override files and overlaid with the persisted state — see **Config layering** above.
 
 The plugin is wired entirely through OpenCode hooks returned by the factory in `src/index.ts`:
 

@@ -61,6 +61,18 @@ describe("buildTiersOutput", () => {
     expect(out).toContain("- r1");
     expect(out).toContain("Default tier: @fast");
   });
+
+  it("renders a minimal (model-only) tier without leaking 'undefined'", () => {
+    const minimal = {
+      activePreset: "local",
+      presets: { local: { fast: { model: "local/qwen" } } },
+      rules: [],
+      defaultTier: "fast",
+    } as unknown as RouterConfig;
+    const out = buildTiersOutput(minimal);
+    expect(out).toContain("@fast -> `local/qwen`");
+    expect(out).not.toContain("undefined");
+  });
 });
 
 describe("preset renderers", () => {

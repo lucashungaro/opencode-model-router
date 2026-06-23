@@ -708,7 +708,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         const agentDef: Record<string, unknown> = {
           model: tier.model,
           mode: "subagent",
-          description: tier.description,
+          description: tier.description ?? `@${name} tier (${tier.model})`,
           maxSteps: tier.steps,
           prompt: finalPrompt,
           color: tier.color,

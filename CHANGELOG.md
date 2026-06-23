@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trailing commas are allowed. The project file is found by
   searching upward to the repo root and wins over the global file, which wins over the defaults.
   Customize models/tiers/presets without editing the cached package file (fixes the "edits to the
-  cached `tiers.json` get wiped on update / are ignored" pain).
+  cached `tiers.json` get wiped on update / are ignored" pain). An overrides file can also define an
+  entirely new preset — `model` is the only required field per tier (`description`, `whenToUse`,
+  `costRatio`, `steps`, etc. are optional).
 - **`/router overrides`** — shows the global + project override paths, which exist, and the merge
   precedence.
 - **`/router models [provider]`** — lists valid model ids from your configured providers (with the

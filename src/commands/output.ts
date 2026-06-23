@@ -46,9 +46,10 @@ export function buildTiersOutput(cfg: RouterConfig): string {
         ? ` | reasoning: effort=${tier.reasoning.effort}`
         : "";
     lines.push(`## @${name} -> \`${tier.model}\`${thinkingStr}`);
-    lines.push(tier.description);
+    if (tier.description) lines.push(tier.description);
     lines.push(`Steps: ${tier.steps ?? "default"}`);
-    lines.push(`Use when: ${tier.whenToUse.join(", ")}\n`);
+    const whenToUse = tier.whenToUse ?? [];
+    lines.push(whenToUse.length ? `Use when: ${whenToUse.join(", ")}\n` : "");
   }
 
   lines.push("## Delegation Rules");
