@@ -73,6 +73,7 @@ The plugin also adds:
 - Read-only call caps on subagents to prevent runaway reconnaissance loops and redundant tool calls.
 - A **plan annotation** command that tags each step of a multi-step plan with the appropriate tier, so the orchestrator knows exactly how to route each step.
 - Claude-model adversarial prefixes / anti-narration guardrails.
+- A budget setting that lets you lean routing toward balance, savings, quality, or deep analysis.
 
 ## In plain terms
 
@@ -90,7 +91,7 @@ That is the routing in a nutshell. You pay expert prices only when a task genuin
 
 The enforcement layer is the kitchen's quality control. It exists because a cook saying "all done" is not the same as the dish being good.
 
-It adds three small things to the process. First, a recipe card travels with each order, so the chef and the cook agree up front on what "done" means (say, the tests pass, or a specific file exists). Second, when the work comes back, someone other than the cook who made it tastes it, and that taster is at least as senior as the cook who executed it. They check it against the recipe card, and if it falls short, a note goes back to the chef suggesting a redo, maybe by a more capable cook. Third, if a cook starts spinning their wheels, like opening the fridge to check the same thing five times, they get a sticky note nudging them to wrap up.
+It works in two parts. First, a recipe card travels with each order, so the chef and the cook agree up front on what "done" means (say, the tests pass, or a specific file exists). Second, when the work comes back, someone other than the cook who made it tastes it, and that taster is at least as senior as the cook who executed it. They check it against the recipe card, and if it falls short, a note goes back to the chef suggesting a redo, maybe by a more capable cook.
 
 How strict all of this is comes down to one setting:
 
@@ -98,7 +99,23 @@ How strict all of this is comes down to one setting:
 - **Advisory (the default):** everything still gets tasted and notes still get left, but nothing is ever held back. Gentle nudges only.
 - **Enforced:** a dish that fails its check is held back and redone, or handed to a better cook, before it can leave the kitchen.
 
-So the chef decides who cooks, and the enforcement layer decides whether the finished plate is good enough to serve.
+### The standing rule: limited trips to the pantry
+
+Separate from that optional quality control, the kitchen has one rule that is always in force, no matter which setting above you pick: a cook only gets so many trips to the pantry on a given task before they have to either start cooking or hand back what they have so far. And if a cook keeps checking the same shelf over and over, they get a sticky note telling them to stop. This is not about whether the dish is any good, it just keeps anyone from vanishing into the walk-in for an hour of "research" instead of producing something. It applies even with quality control turned off. This is the read-only call cap feature.
+
+### Planning a big job up front
+
+For a large, multi-step job you do not have to let the chef work out each step on the fly. You can write the plan down and have the kitchen label every step on the ticket ahead of time with the cook who should handle it. Think of prepping a banquet where each course is pre-assigned to a station, so nobody is deciding in the middle of service. This is the plan annotation feature.
+
+### Keeping certain cooks on task
+
+Some cooks arrive with strong habits from their previous job. Left alone they tend to wander the whole pantry "just to be thorough," or they announce what they are about to do ("now I'll dice the onions") instead of actually doing it. For those cooks the plugin clips a short note to the top of their instructions: in this kitchen your job is the dish in front of you, not a tour of the pantry, and please cook rather than describe cooking. It keeps them from burning time and money on busywork. This is the adversarial prefix / anti-narration guardrail feature.
+
+### Setting the kitchen's priorities
+
+You can also tell the kitchen how to lean. One setting keeps things balanced, one pushes hard for savings and sends almost everything to the cheap cook, one spends more freely when you want quality, and one goes expert-first for long, hard jobs. You also choose which suppliers the cooks come from (Anthropic, OpenAI, Google, GitHub Copilot, or a mix), and if a supplier is unavailable the kitchen falls back to another automatically. This is the budget mode, preset, and fallback chain feature.
+
+So the chef decides who cooks, the quality control decides whether the finished plate is good enough to serve, and the remaining knobs let you set the kitchen's budget, priorities, and suppliers.
 
 ## Cost simulation
 
