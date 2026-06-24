@@ -2,7 +2,7 @@
 
 > **Use the cheapest model that can do the job. Automatically.**
 
-An [OpenCode](https://opencode.ai) plugin that routes every coding task to the right-priced AI tier — automatically, on every message, with ~210 tokens of overhead.
+An [OpenCode](https://opencode.ai) plugin that routes every coding task to the right-priced AI tier, automatically, on every message.
 
 ## Why it's different
 
@@ -11,8 +11,8 @@ Most AI coding tools give you one model for everything. You pay Opus prices to r
 **Use a mid-tier model as orchestrator.**
 The orchestrator runs on *every* message. Put Sonnet there, not Opus. Sonnet reads a routing protocol and delegates just as well as Opus at 4x lower cost. Reserve Opus for when it genuinely matters.
 
-**Inject a compressed, LLM-optimized routing protocol.**
-Instead of verbose instructions, the plugin injects ~210 tokens of dense, machine-readable notation the orchestrator understands perfectly. Same routing intelligence as 870 tokens of prose — 75% smaller. Every message, every session.
+**Inject the routing protocol on every message.**
+The orchestrator gets the tier taxonomy, routing rules, and (when enforcement is on) the acceptance contract in its system prompt every turn. That overhead is currently around 1.4k to 2k tokens depending on the orchestrator model and enforcement mode (see [Token overhead](#token-overhead)), and it is normally saved back many times over by routing the turn's work to a cheaper tier.
 
 **Match task to tier using a configurable taxonomy.**
 A keyword routing guide (`@fast→search/grep/read`, `@medium→impl/refactor/test`, `@heavy→arch/debug/security`) tells the orchestrator exactly which tier fits each task type. Fully customizable. No ambiguity.
@@ -65,7 +65,7 @@ opencode-model-router injects a **delegation protocol** into the system prompt t
 4. **Never over-qualify** — use the cheapest tier that can reliably handle the task
 5. **Fallback** across providers when one fails
 
-All of this adds ~210 tokens of system prompt overhead per message.
+This protocol is injected into the system prompt on every message. The overhead is currently around 1.4k to 2k tokens depending on your orchestrator model and enforcement mode (see [Token overhead](#token-overhead)).
 
 The plugin also adds:
 
@@ -164,9 +164,9 @@ Task distribution: 18 exploration (60%), 10 implementation (33%), 2 architecture
 
 ## How it works
 
-On every message, the plugin injects ~210 tokens into the system prompt. The notation is intentionally dense and compressed — it's **optimized for LLM comprehension, not human readability**. An agent reads it as a precise routing grammar; a human might squint at it. That's by design: verbose prose would cost 4x more tokens per message with no routing benefit.
+On every message, the plugin injects the delegation protocol into the orchestrator's system prompt. It encodes the tier taxonomy, routing rules, per-tier guidance, and (when enforcement is on) the acceptance contract. Current size is roughly 1.4k to 2k tokens depending on the orchestrator model and enforcement mode; see [Token overhead](#token-overhead) for the breakdown and the levers that shrink it.
 
-What the orchestrator sees (Anthropic preset, normal mode):
+The routing grammar at the heart of it, abridged for readability (the full injected text also carries a `HARD ROUTING` block, per-tier contracts, and the acceptance section):
 
 ```
 ## Model Delegation Protocol
@@ -216,7 +216,6 @@ With router → split:
 | Cross-provider fallback | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Cost ratio awareness | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Plan annotation with tiers | ✅ | ❌ | ❌ | ❌ | ❌ |
-| ~210 token overhead | ✅ | — | ❌ | ❌ | ❌ |
 
 **Claude native**: single model for everything, no cost routing. If you're using claude.ai or OpenCode without plugins, you're paying the same price for `grep` as for architecture design.
 
@@ -810,13 +809,24 @@ After `/annotate-plan`:
 
 ## Token overhead
 
-The system prompt injection is ~210 tokens per message — roughly the same as v1.0 (before cost-aware features were added). Dense notation keeps overhead flat while adding full routing intelligence.
+The delegation protocol is injected into the orchestrator's system prompt on every message. Measured against the currently shipped protocol (approximate tokens):
 
-| Version | Tokens | Features |
+| Orchestrator + mode | ~tokens/msg |
+|---|---|
+| non-Claude orchestrator, `enforcement: off` | ~1,400 |
+| non-Claude orchestrator, advisory (default) | ~1,600 |
+| Claude orchestrator, `enforcement: off` | ~1,750 |
+| Claude orchestrator, advisory (default) | ~1,950 |
+
+Two things drive the size: a Claude orchestrator gets an extra adversarial / anti-narration prefix (~350 tokens), and advisory or enforced mode adds the acceptance-contract section (~200 tokens). To minimize overhead, run a non-Claude orchestrator and/or set `enforcement.mode: "off"`.
+
+The protocol was much smaller in early versions (~210 tokens through v1.1). It grew when the enforcement layer and Claude-hardening prefixes were added, and a good chunk of the current size is redundancy (the routing rules and caps are each stated more than once).
+
+| Version | Approx tokens | Notes |
 |---------|--------|----------|
-| v1.0.7 | ~208 | Basic tier routing |
-| v1.1.0 | ~870 | All features, verbose format |
-| v1.1.1+ | ~210 | All features, compressed format |
+| v1.0.7 | ~208 | basic tier routing |
+| v1.1.x | ~210 | all features, compact format |
+| v1.2 to v1.4 | ~1,400 to 1,950 | added enforcement layer + Claude-hardening prefixes |
 
 ## Requirements
 
