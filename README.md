@@ -9,7 +9,7 @@ An [OpenCode](https://opencode.ai) plugin that routes every coding task to the r
 Most AI coding tools give you one model for everything. You pay Opus prices to run `grep`. opencode-model-router changes that with a stack of interlocking ideas:
 
 **Use a mid-tier model as orchestrator.**
-The orchestrator runs on *every* message. Put Sonnet there, not Opus. Sonnet reads a routing protocol and delegates just as well as Opus — at 4x lower cost. Reserve Opus for when it genuinely matters.
+The orchestrator runs on *every* message. Put Sonnet there, not Opus. Sonnet reads a routing protocol and delegates just as well as Opus at 4x lower cost. Reserve Opus for when it genuinely matters.
 
 **Inject a compressed, LLM-optimized routing protocol.**
 Instead of verbose instructions, the plugin injects ~210 tokens of dense, machine-readable notation the orchestrator understands perfectly. Same routing intelligence as 870 tokens of prose — 75% smaller. Every message, every session.
@@ -43,7 +43,7 @@ Tiers, models, cost ratios, rules, task patterns, routing modes, fallback chains
 
 ## The problem
 
-Vibe coding is expensive because most AI coding tools default to one model for everything. That model is usually the most capable available — and you pay for that capability even when the task is `grep for a function name`.
+Coding with AI is expensive because most coding tools default to one model for everything. That model is usually the most capable available, and you pay for that capability even when the task is `grep for a function name`.
 
 A typical coding session breaks down roughly like this:
 
@@ -66,6 +66,39 @@ opencode-model-router injects a **delegation protocol** into the system prompt t
 5. **Fallback** across providers when one fails
 
 All of this adds ~210 tokens of system prompt overhead per message.
+
+The plugin also adds:
+
+- An optional **enforcement layer** that checks whether delegated work actually meets the agreed-upon definition of "done" (tests pass, file exists, etc.) and nudges or blocks subagents that fail to meet it.
+- Read-only call caps on subagents to prevent runaway reconnaissance loops and redundant tool calls.
+- A **plan annotation** command that tags each step of a multi-step plan with the appropriate tier, so the orchestrator knows exactly how to route each step.
+- Claude-model adversarial prefixes / anti-narration guardrails.
+
+## In plain terms
+
+Here's the gist of what the plugin does.
+
+### Picking who does the work
+
+Think of your main orchestrator model as a head chef in a restaurant. You give it an order, and instead of cooking everything itself, it hands tasks to line cooks of different skill and price: a fast, cheap cook for simple tasks, a mid-level cook for everyday work, and an expensive expert for the hard problems.
+
+The chef assigns each task by what the task is, not by who is fanciest. Reading a file, searching the codebase, or looking something up goes to the cheap cook. Writing and editing code goes to the mid-level cook. Gnarly architecture, security work, or debugging that has already failed a couple of times goes to the expert. Trivial one-off lookups the chef just handles itself, since delegating those would cost more than it saves.
+
+That is the routing in a nutshell. You pay expert prices only when a task genuinely needs an expert, which is exactly the point.
+
+### Making sure the work actually got done
+
+The enforcement layer is the kitchen's quality control. It exists because a cook saying "all done" is not the same as the dish being good.
+
+It adds three small things to the process. First, a recipe card travels with each order, so the chef and the cook agree up front on what "done" means (say, the tests pass, or a specific file exists). Second, when the work comes back, someone other than the cook who made it tastes it, and that taster is at least as senior as the cook who executed it. They check it against the recipe card, and if it falls short, a note goes back to the chef suggesting a redo, maybe by a more capable cook. Third, if a cook starts spinning their wheels, like opening the fridge to check the same thing five times, they get a sticky note nudging them to wrap up.
+
+How strict all of this is comes down to one setting:
+
+- **Off:** no checking. A cook says done and it goes out.
+- **Advisory (the default):** everything still gets tasted and notes still get left, but nothing is ever held back. Gentle nudges only.
+- **Enforced:** a dish that fails its check is held back and redone, or handed to a better cook, before it can leave the kitchen.
+
+So the chef decides who cooks, and the enforcement layer decides whether the finished plate is good enough to serve.
 
 ## Cost simulation
 
