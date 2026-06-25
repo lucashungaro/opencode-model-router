@@ -40,11 +40,11 @@ There is no lint script and no build/bundle step — the package ships raw `src/
 The plugin is wired entirely through OpenCode hooks returned by the factory in `src/index.ts`:
 
 - **`config`** — at load time, registers a tier *agent* per tier and the slash commands (`tiers`, `preset`, `budget`, `bypass`, `annotate-plan`, `router`). Command bodies are handled in `command.execute.before`.
-- **`experimental.chat.system.transform`** — injects the compressed delegation protocol into the orchestrator system prompt. **Skipped for subagent sessions** (otherwise subagents try to call the nonexistent `Task` tool). Adds Claude-specific adversarial/anti-narration prefixes when the session model is a Claude identifier (`isClaudeModel`).
+- **`experimental.chat.system.transform`** — injects the compressed delegation protocol into the orchestrator system prompt. **Skipped for subagent sessions** (otherwise subagents try to call the nonexistent `Task` tool). Adds the Claude adversarial prefix when the session model is a Claude identifier (`isClaudeModel`); the anti-narration clause is appended only when `cfg.antiNarration` is set (off by default).
 - **`chat.message`** (NOT `chat.params`) — detects subagent sessions by matching `input.agent` against a registered tier name and records the sessionID. This must run before `system.transform`; the OpenCode order is `chat.message → system.transform → chat.params`, so doing it in `chat.params` is one step too late. See the long rationale comment above the `chat.message` hook in `src/index.ts`.
 - **`tool.execute.before`** — Layer-1 hard-block guard (`src/guard/`). Only active for subagent sessions when enforcement is `advisory`/`enforced`; throws to abort a disallowed tool call. Orchestrator sessions are never hard-blocked.
 - **`tool.execute.after`** — appends read-only cap banners (`[cap: N/M]`, warnings, `[⚠ REDUNDANT]`) to grep/read/glob/ls results for tracked subagent sessions (`src/router/sessions.ts`).
-- **`experimental.text.complete`** — post-hoc narration detector (`src/guard/narration.ts`); appends a `[⚠ narration detected: ...]` banner, non-blocking.
+- **`experimental.text.complete`** — post-hoc narration detector (`src/guard/narration.ts`), gated by `cfg.antiNarration` (off by default); appends a `[⚠ narration detected: ...]` banner, non-blocking.
 
 ### Module map
 

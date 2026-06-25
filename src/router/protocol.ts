@@ -276,7 +276,12 @@ export function assembleSystemPrompt(
 ): string {
   const delegationProtocol = buildDelegationProtocol(cfg);
   const dodSection = enforcementOn ? `\n\n---\n\n${buildDoDProtocolSection(cfg)}` : "";
-  return isClaudeModel(orchestratorModel)
-    ? `${CLAUDE_ORCHESTRATOR_PREFIX}\n\n${CLAUDE_ANTI_NARRATION}\n\n---\n\n${delegationProtocol}${dodSection}`
-    : `${delegationProtocol}${dodSection}`;
+  if (!isClaudeModel(orchestratorModel)) {
+    return `${delegationProtocol}${dodSection}`;
+  }
+  // anti-narration clause is opt-in (cfg.antiNarration); off by default.
+  const claudePrefix = cfg.antiNarration
+    ? `${CLAUDE_ORCHESTRATOR_PREFIX}\n\n${CLAUDE_ANTI_NARRATION}`
+    : CLAUDE_ORCHESTRATOR_PREFIX;
+  return `${claudePrefix}\n\n---\n\n${delegationProtocol}${dodSection}`;
 }

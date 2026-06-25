@@ -72,7 +72,7 @@ The plugin also adds:
 - An optional **enforcement layer** that checks whether delegated work actually meets the agreed-upon definition of "done" (tests pass, file exists, etc.) and nudges or blocks subagents that fail to meet it.
 - Read-only call caps on subagents to prevent runaway reconnaissance loops and redundant tool calls.
 - A **plan annotation** command that tags each step of a multi-step plan with the appropriate tier, so the orchestrator knows exactly how to route each step.
-- Claude-model adversarial prefixes / anti-narration guardrails.
+- Claude-model adversarial prefixes (always on for Claude), plus an optional anti-narration guardrail (off by default).
 - A budget setting that lets you lean routing toward balance, savings, quality, or deep analysis.
 
 ## Understanding how it works
@@ -117,7 +117,7 @@ This is the plan annotation feature. You can invoke it with `/annotate-plan`. Mo
 
 Some cooks arrive with strong habits from their previous job. Left alone they tend to wander the whole pantry "just to be thorough," or they announce what they are about to do ("now I'll dice the onions") instead of actually doing it.
 
-For those cooks the plugin clips a short note to the top of their instructions: in this kitchen your job is the dish in front of you, not a tour of the pantry, and please cook rather than describe cooking. It keeps them from burning time and money on busywork. This is the adversarial prefix / anti-narration guardrail feature.
+For those cooks the plugin clips a short note to the top of their instructions: in this kitchen your job is the dish in front of you, not a tour of the pantry. It keeps them from burning time and money on busywork. This is the adversarial prefix. There is also an optional, off-by-default add-on (the anti-narration guardrail) that tells them to cook rather than describe cooking; turn it on only if a cook keeps announcing dishes without plating them.
 
 ### Setting the kitchen's priorities
 
@@ -658,11 +658,17 @@ Detection is by model string, not preset. A `hybrid` preset that mixes providers
 
 No configuration is needed — the prefixes are always applied for Claude-backed tiers. If you want to disable them, override the tier's `prompt` field (per-tier overrides replace the whole prompt, including the prefix).
 
-### Anti-narration guardrail (Claude models)
+### Anti-narration guardrail (Claude models, opt-in)
 
-Thinking-enabled Claude models (especially Sonnet with the `max` variant) sometimes produce progress narration instead of actual work — phrasings like *"Still writing the X function..."*, *"Now I'll implement Y..."*, *"Let me add Z..."* — without the X/Y/Z ever appearing. This is a known thinking-mode failure pattern.
+Some Claude models (historically, thinking-enabled Sonnet with the `max` variant) can produce progress narration instead of actual work, phrasings like *"Still writing the X function..."*, *"Now I'll implement Y..."*, *"Let me add Z..."*, without the X/Y/Z ever appearing.
 
-The router counters this on two layers:
+This guardrail is **off by default**. It costs ~162 tokens per Claude dispatch (the prompt clause) and its detector false-positives on normal productive phrasing like "Now I'll add the test" when the test does follow, so it is opt-in. Enable it only if you actually observe narration-without-production on your models:
+
+```jsonc
+{ "antiNarration": true }
+```
+
+When enabled, it works on two layers:
 
 **1. Prompt-level clause (prevention).** A dedicated `ANTI-NARRATION` block is appended to every Claude-backed tier prompt and to the Claude-backed orchestrator delegation protocol. It names the forbidden phrasings explicitly and requires concrete output to follow any such phrase. A carve-out preserves legitimate explanation/plan requests from the user.
 
@@ -688,7 +694,7 @@ Detected patterns (conservative set to minimize false positives):
 - `Going to (write|implement|...) the X`
 - `Continuing (with|by ...ing) (the )? X`
 
-Applies to all models, not only Claude — but the prompt-level clause is Claude-only, so non-Claude models get detector-only.
+When `antiNarration` is enabled, the detector runs for all models (not only Claude), while the prompt-level clause is Claude-only, so non-Claude models get detector-only. With the default (`antiNarration` off), neither layer runs.
 
 ### Tier fields reference
 
