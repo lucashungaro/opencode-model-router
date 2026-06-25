@@ -1,49 +1,49 @@
 # opencode-model-router
 
-> **Use the cheapest model that can do the job. Automatically.**
+> **Automatically use the cheapest model that can do the job.**
 
 An [OpenCode](https://opencode.ai) plugin that routes every coding task to the right-priced AI tier, automatically, on every message.
 
-## Why it's different
+## Main features and characteristics
 
-Most AI coding tools give you one model for everything. You pay Opus prices to run `grep`. opencode-model-router changes that with a stack of interlocking ideas:
+Most AI coding tools give you one model for everything, meaning you pay frontier prices for things like running a simple `grep`. The opencode-model-router plugin changes that with a stack of instructions, guardrails and tools:
 
 **Use a mid-tier model as orchestrator.**
-The orchestrator runs on *every* message. Put Sonnet there, not Opus. Sonnet reads a routing protocol and delegates just as well as Opus at 4x lower cost. Reserve Opus for when it genuinely matters.
+The orchestrator runs on *every* message. You should use a mid-tier model for this (just set it as your default model for Opencode). That model reads a routing protocol and delegates work just as well as any top-tier model at much lower cost. Reserve the top-tier models for when it genuinely matters. For example, when using Anthropic models, the orchestrator should be Sonnet, not Opus.
 
 **Inject the routing protocol on every message.**
-The orchestrator gets the tier taxonomy, routing rules, and (when enforcement is on) the acceptance contract in its system prompt every turn. That overhead is currently around 1.4k to 2k tokens depending on the orchestrator model and enforcement mode (see [Token overhead](#token-overhead)), and it is normally saved back many times over by routing the turn's work to a cheaper tier.
+The orchestrator gets the tier taxonomy, routing rules, and (when enforcement is on) the acceptance contract in its system prompt every turn. That overhead is currently around 1.4k to 2k tokens depending on the orchestrator model and enforcement mode (see [Token overhead](#token-overhead)), while saving many times over by routing the turn's work to a cheaper tier when possible.
 
 **Match task to tier using a configurable taxonomy.**
-A keyword routing guide (`@fast→search/grep/read`, `@medium→impl/refactor/test`, `@heavy→arch/debug/security`) tells the orchestrator exactly which tier fits each task type. Fully customizable. No ambiguity.
+A compact keyword routing guide (`@fast→search/grep/read`, `@medium→impl/refactor/test`, `@heavy→arch/debug/security`) tells the orchestrator exactly which tier fits each task type. Fully customizable.
 
-**Split separable composite tasks: explore cheap, execute smart.**
-"Find how auth works and refactor it" shouldn't cost @medium for the whole thing. The multi-phase guidance prefers a split when phases are separable: @fast reads the files (1x cost), @medium does the rewrite (5x cost). ~36% savings on composite tasks, which are ~65% of real coding sessions.
+**Split separable composite tasks: explore cheaply, execute efficiently.**
+"Find how auth works and refactor it" shouldn't cost @medium for the whole thing. The multi-phase guidance prefers a split when phases are separable: @fast reads the files (1x cost), @medium does the rewrite (5x cost). The goal is to get significant savings on composite tasks, representing realistic coding sessions (many turns mixing exploration, writing code, running tests, debugging etc).
 
 **Skip delegation overhead for trivial work.**
-Single grep? One file read (or a quick follow-up)? The orchestrator can execute directly — zero delegation cost, zero latency.
+Single grep? One file read (or a quick follow-up)? The orchestrator can execute directly to avoid extra delegation cost and latency.
 
 **Four routing modes for different budgets.**
 `/budget normal` (balanced), `/budget budget` (aggressive savings, defaults everything to @fast), `/budget quality` (liberal use of stronger models), `/budget deep` (heavy-first for long architecture/debug runs). Mode persists across restarts.
 
 **Cost ratios in the prompt.**
-Every tier carries its `costRatio` (fast=1x, medium=5x, heavy=20x) injected into the system prompt. The orchestrator sees the price before deciding. It picks the cheapest tier that can reliably handle the task.
+Every tier carries its `costRatio` (e.g., fast=1x, medium=5x, heavy=20x) injected into the system prompt. The orchestrator sees the price before deciding. It picks the cheapest tier that can reliably handle the task.
 
 **Orchestrator-awareness.**
-If the orchestrator is already running on Opus, the rule `self∈opus→never→@heavy` fires — it does the heavy work itself rather than delegating to another Opus instance.
+If the orchestrator is already running on Opus, the rule `self∈opus→never→@heavy` fires. It does the heavy work itself rather than delegating to another Opus instance.
 
 **Multi-provider support with automatic fallback.**
-Five presets out of the box: Anthropic, OpenAI, GitHub Copilot, Google, and a mixed-provider Hybrid. Switch with `/preset`. If a provider fails, the fallback chain tries the next one automatically.
+Five presets out of the box: Anthropic, OpenAI, GitHub Copilot, Google, and a mixed-provider Hybrid. If a provider fails, the fallback chain tries the next one automatically. You can switch presets using the `/preset` command, or add your own preset in an overrides file.
 
 **Plan annotation for long tasks.**
-`/annotate-plan` reads a markdown plan and tags each step with `[tier:fast]`, `[tier:medium]`, or `[tier:heavy]` — removing all routing ambiguity from multi-step workflows.
+`/annotate-plan` reads a markdown plan and tags each step with `[tier:fast]`, `[tier:medium]`, or `[tier:heavy]`, removing all routing ambiguity from multi-step workflows.
 
 **Fully configurable.**
-Tiers, models, cost ratios, rules, task patterns, routing modes, fallback chains — all in `tiers.json`. No code changes needed.
+Tiers, models, cost ratios, rules, task patterns, routing modes, quality enforcement, fallback chains can be configured using an overrides file. You can also add a new preset for a provider not included in the defaults.
 
 ## The problem
 
-Coding with AI is expensive because most coding tools default to one model for everything. That model is usually the most capable available, and you pay for that capability even when the task is `grep for a function name`.
+Coding with AI can get expensive when the coding tools default to one model for everything. That model is usually the most capable available, and you pay for that capability even when the task is "grep for a function name".
 
 A typical coding session breaks down roughly like this:
 
@@ -53,17 +53,17 @@ A typical coding session breaks down roughly like this:
 | Implementation | ~45% | Write a function, fix a bug, add a test |
 | Architecture / deep debug | ~15% | Design a new module, debug after 2+ failures |
 
-If you're running Opus (20x cost) for all of it, you're overpaying by **3-10x** on most tasks.
+If you're running Opus or GPT 5.5 for all of it, you're overpaying significantly on most tasks.
 
 ## The solution
 
-opencode-model-router injects a **delegation protocol** into the system prompt that teaches the orchestrator to:
+`opencode-model-router` injects a **delegation protocol** into the system prompt that teaches the orchestrator to:
 
-1. **Match task to tier** using a configurable task taxonomy
-2. **Split composite tasks** — explore first with a cheap model, then implement with a mid-tier model
-3. **Skip delegation overhead** for trivial tasks (1-2 tool calls)
-4. **Never over-qualify** — use the cheapest tier that can reliably handle the task
-5. **Fallback** across providers when one fails
+1. **Match task to tier**: using a configurable task taxonomy
+2. **Split composite tasks**: explore first with a cheap model, then implement with a mid-tier model
+3. **Skip delegation overhead**: for trivial tasks (1-2 tool calls) use the orchestrator directly
+4. **Never over-qualify**: use the cheapest tier that can reliably handle the task
+5. **Fallback**: if a provider/model is unavailable, try another option
 
 This protocol is injected into the system prompt on every message. The overhead is currently around 1.4k to 2k tokens depending on your orchestrator model and enforcement mode (see [Token overhead](#token-overhead)).
 
@@ -75,15 +75,15 @@ The plugin also adds:
 - Claude-model adversarial prefixes / anti-narration guardrails.
 - A budget setting that lets you lean routing toward balance, savings, quality, or deep analysis.
 
-## In plain terms
+## Understanding how it works
 
-Here's the gist of what the plugin does.
+There are a lot of moving parts, so let's use an analogy to explain how the plugin works.
 
 ### Picking who does the work
 
 Think of your main orchestrator model as a head chef in a restaurant. You give it an order, and instead of cooking everything itself, it hands tasks to line cooks of different skill and price: a fast, cheap cook for simple tasks, a mid-level cook for everyday work, and an expensive expert for the hard problems.
 
-The chef assigns each task by what the task is, not by who is fanciest. Reading a file, searching the codebase, or looking something up goes to the cheap cook. Writing and editing code goes to the mid-level cook. Gnarly architecture, security work, or debugging that has already failed a couple of times goes to the expert. Trivial one-off lookups the chef just handles itself, since delegating those would cost more than it saves.
+The chef assigns each task by what the task is, not by who is the "fanciest" cook. Reading a file, searching the codebase, or looking something up goes to the cheap cook. Writing and editing code goes to the mid-level cook. Gnarly architecture, security work, or debugging that has already failed a couple of times goes to the expert. Trivial one-off lookups the chef just handles itself, since delegating those would cost more than it saves.
 
 That is the routing in a nutshell. You pay expert prices only when a task genuinely needs an expert, which is exactly the point.
 
@@ -99,23 +99,31 @@ How strict all of this is comes down to one setting:
 - **Advisory (the default):** everything still gets tasted and notes still get left, but nothing is ever held back. Gentle nudges only.
 - **Enforced:** a dish that fails its check is held back and redone, or handed to a better cook, before it can leave the kitchen.
 
+You can disable the enforcement layer entirely to save some tokens in the system prompt, at the cost of possible re-work if a subagent fails to meet the agreed-upon definition of "done." This is the enforcement feature.
+
 ### The standing rule: limited trips to the pantry
 
-Separate from that optional quality control, the kitchen has one rule that is always in force, no matter which setting above you pick: a cook only gets so many trips to the pantry on a given task before they have to either start cooking or hand back what they have so far. And if a cook keeps checking the same shelf over and over, they get a sticky note telling them to stop. This is not about whether the dish is any good, it just keeps anyone from vanishing into the walk-in for an hour of "research" instead of producing something. It applies even with quality control turned off. This is the read-only call cap feature.
+Separate from that optional quality control, the kitchen has one rule that is always in force, no matter which setting above you pick: a cook only gets so many trips to the pantry on a given task before they have to either start cooking or hand back what they have so far. And if a cook keeps checking the same shelf over and over, they get a sticky note telling them to stop. This is not about whether the dish is any good, it just keeps anyone from vanishing into the walk-in for an hour of "research" instead of producing something. It applies even with enforcement layer turned off.
+
+This is the read-only call cap feature. It prevents runaway "exploration" loops and redundant tool calls, which are a common source of wasted time and money.
 
 ### Planning a big job up front
 
-For a large, multi-step job you do not have to let the chef work out each step on the fly. You can write the plan down and have the kitchen label every step on the ticket ahead of time with the cook who should handle it. Think of prepping a banquet where each course is pre-assigned to a station, so nobody is deciding in the middle of service. This is the plan annotation feature.
+For a large, multi-step job you do not have to let the chef work out each step on the fly. You can write the plan down and have the kitchen label every step on the ticket ahead of time with the cook who should handle it. Think of prepping a banquet where each course is pre-assigned to a station, so nobody is deciding in the middle of service.
+
+This is the plan annotation feature. You can invoke it with `/annotate-plan`. More details in [Plan annotation](#plan-annotation).
 
 ### Keeping certain cooks on task
 
-Some cooks arrive with strong habits from their previous job. Left alone they tend to wander the whole pantry "just to be thorough," or they announce what they are about to do ("now I'll dice the onions") instead of actually doing it. For those cooks the plugin clips a short note to the top of their instructions: in this kitchen your job is the dish in front of you, not a tour of the pantry, and please cook rather than describe cooking. It keeps them from burning time and money on busywork. This is the adversarial prefix / anti-narration guardrail feature.
+Some cooks arrive with strong habits from their previous job. Left alone they tend to wander the whole pantry "just to be thorough," or they announce what they are about to do ("now I'll dice the onions") instead of actually doing it.
+
+For those cooks the plugin clips a short note to the top of their instructions: in this kitchen your job is the dish in front of you, not a tour of the pantry, and please cook rather than describe cooking. It keeps them from burning time and money on busywork. This is the adversarial prefix / anti-narration guardrail feature.
 
 ### Setting the kitchen's priorities
 
-You can also tell the kitchen how to lean. One setting keeps things balanced, one pushes hard for savings and sends almost everything to the cheap cook, one spends more freely when you want quality, and one goes expert-first for long, hard jobs. You also choose which suppliers the cooks come from (Anthropic, OpenAI, Google, GitHub Copilot, or a mix), and if a supplier is unavailable the kitchen falls back to another automatically. This is the budget mode, preset, and fallback chain feature.
+You can also tell the kitchen how to lean. One setting keeps things balanced, one pushes hard for savings and sends almost everything to the cheap cook (with the obvious quality trade-offs), one spends more freely when you want quality, and one goes expert-first for long, hard jobs. You also choose which suppliers the cooks come from (Anthropic, OpenAI, Google, GitHub Copilot, or a mix), and if a supplier is unavailable the kitchen falls back to another automatically. These are the budget modes, presets, and fallback chain features.
 
-So the chef decides who cooks, the quality control decides whether the finished plate is good enough to serve, and the remaining knobs let you set the kitchen's budget, priorities, and suppliers.
+In summary, the chef decides who cooks, the quality control decides whether the finished plate is good enough to serve, and the remaining knobs let you set the kitchen's budget, priorities, and suppliers.
 
 ## Cost simulation
 
@@ -160,9 +168,9 @@ Task distribution: 18 exploration (60%), 10 implementation (33%), 2 architecture
 | Sonnet orchestrator + router (normal) | 100x | **−83%** |
 | Sonnet orchestrator + router (budget) | 50x | **−92%** |
 
-> Cost ratios are relative units. Actual savings depend on your provider pricing and model selection.
+> Cost ratios are relative units. Actual savings depend on your provider pricing and model selection. This is a simulated scenario, not a real measurement.
 
-## How it works
+## Inner workings
 
 On every message, the plugin injects the delegation protocol into the orchestrator's system prompt. It encodes the tier taxonomy, routing rules, per-tier guidance, and (when enforcement is on) the acceptance contract. Current size is roughly 1.4k to 2k tokens depending on the orchestrator model and enforcement mode; see [Token overhead](#token-overhead) for the breakdown and the levers that shrink it.
 
@@ -179,61 +187,39 @@ Delegate with Task(subagent_type="fast|medium|heavy", prompt="...").
 Keep orchestration and final synthesis in the primary agent.
 ```
 
-**What each line means (for humans):**
+**What each line means:**
 
 | Line | What it encodes |
 |------|----------------|
 | `Tiers: @fast=...(1x) @medium=...(5x) @heavy=...(20x)` | Model + cost ratio per tier, all in one compact token |
-| `R: @fast→search/grep/... @medium→impl/...` | Full task taxonomy — keyword triggers for each tier |
+| `R: @fast→search/grep/... @medium→impl/...` | Full task taxonomy with keyword triggers for each tier |
 | `Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable` | Preferred decomposition for separable composite tasks |
 | `1.[tier:X]→... 5.trivial(≤1 tool call)... 6.before @heavy: gather context...` | Numbered routing rules in abbreviated form |
 | `Err→retry-alt-tier→fail→direct. Chain: anthropic→...` | Fallback strategy in one line |
 
 The orchestrator reads this once per message and applies it to every tool call and delegation decision in that turn.
 
-### Multi-phase decomposition (key differentiator)
+### Multi-phase decomposition
 
-The most impactful optimization. A composite task like:
+This is the most impactful optimization. For example, in a medium sized app, a composite task consuming about 8K tokens might be:
 
 > "Find how the auth middleware works and refactor it to use JWT."
 
-Without router → routed entirely to `@medium` (5x for all ~8K tokens)
+Without the router: we could execute entirely with a "medium" model (5x for all ~8K tokens) or "heavy" model (20x for all ~8K tokens).
 
-With router → split:
+With the router, the orchestrator sees that the task is separable into two phases: exploration (grep, read files, trace call chain) and execution (rewrite auth module). It routes the first phase to a "fast" model (1x) and the second phase to a "medium" model (5x), saving significant cost.
 - **@fast (1x)**: grep, read 4-5 files, trace call chain (~4K tokens)
 - **@medium (5x)**: rewrite auth module (~4K tokens)
 
 **Result: ~36% cost reduction on composite tasks**, which represent ~60-70% of real coding work.
 
-## Why not just use another orchestrator?
-
-| Feature | model-router | Claude native | oh-my-opencode | GSD | ralph-loop |
-|---------|:---:|:---:|:---:|:---:|:---:|
-| Multi-tier cost routing | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Configurable task taxonomy | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Budget / quality modes | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Multi-phase decomposition | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Cross-provider fallback | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Cost ratio awareness | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Plan annotation with tiers | ✅ | ❌ | ❌ | ❌ | ❌ |
-
-**Claude native**: single model for everything, no cost routing. If you're using claude.ai or OpenCode without plugins, you're paying the same price for `grep` as for architecture design.
-
-**oh-my-opencode**: focused on workflow personality and prompt style, not cost optimization. No tier routing, no task taxonomy.
-
-**GSD (Get Shit Done)**: prioritizes execution speed and low deliberation overhead. Excellent at pushing through tasks fast, but uses one model — no cost differentiation between search and architecture.
-
-**ralph-loop**: iterative feedback-loop orchestrator. Excellent at self-correction and quality verification. No tier routing — every loop iteration runs on the same model regardless of task complexity.
-
-**The core difference**: the others optimize for *how* the agent works (style, speed, quality loops). model-router optimizes for *what it costs* — with zero compromise on quality, because you can always put Opus in the heavy tier.
-
 ## Recommended setup
 
-**Orchestrator**: use `Claude Sonnet 4.6` (or equivalent mid-tier) as your primary/default model. Not Opus.
+**Orchestrator**: use `Claude Sonnet 4.6` (or equivalent mid-tier) as your primary/default model.
 
-Why: the orchestrator runs on every message, including trivial ones. Sonnet can read the delegation protocol and make routing decisions just as well as Opus. You reserve Opus for when it's genuinely needed — via `@heavy` delegation.
+Why: the orchestrator runs on every message, including trivial ones. A balanced model like Sonnet can read the delegation protocol and make routing decisions just as well as a heavy one like Opus. You reserve the large frontier models for when they're genuinely needed.
 
-In your `opencode.json`:
+In your `opencode.json`, set the default model (your orchestrator):
 ```json
 {
   "model": "anthropic/claude-sonnet-4-6",
@@ -285,13 +271,13 @@ OpenCode runs on Bun, which executes the TypeScript code and resolves the plugin
 
 ## Configuration
 
-The bundled defaults live in `tiers.json` at the plugin root. To customize models, tiers, or presets, add an **overrides file** — you never need to edit the bundled file.
+The bundled defaults live in `tiers.json` at the plugin root. To customize models, tiers, or presets, add an **overrides file**. You should never edit the bundled file directly.
 
-### Overrides files (survive updates)
+### Overrides files
 
-Anything in an overrides file is **deep-merged** over the bundled `tiers.json` on load — you only specify the keys you want to change; everything else falls back to the defaults. These files live outside the cache dir, so they are **not** wiped when the plugin updates. They're `.jsonc`, so `//` and `/* */` comments and trailing commas are allowed.
+Anything in an overrides file is **deep-merged** over the bundled `tiers.json` on load. You only specify the keys you want to change; everything else falls back to the defaults. These files live outside the cache dir, so they are **not** wiped when the plugin updates. They're `.jsonc`, so `//` and `/* */` comments and trailing commas are allowed.
 
-There are two layers, applied lowest→highest priority:
+There are two layers, applied at lowest → highest priority:
 
 | Layer | Path | Scope |
 |-------|------|-------|
@@ -310,9 +296,9 @@ The project file deep-merges over (and wins against) the global file, which in t
 }
 ```
 
-The example above changes only the `@heavy` model/variant for the `github-copilot` preset; every other tier, preset, and setting keeps its bundled value. You can also override `costRatio`, `tierCaps`, `rules`, `modes`, `enforcement`, add an entirely new preset, etc. — any top-level key from `tiers.json`.
+The example above changes only the `@heavy` model/variant for the `github-copilot` preset; every other tier, preset, and setting keeps its bundled value. You can also override `costRatio`, `tierCaps`, `rules`, `modes`, `enforcement`, add an entirely new preset, etc. Any top-level key from `tiers.json` can be overridden.
 
-A fuller example overriding several keys at once (`.jsonc`, so comments and trailing commas are fine):
+A fuller example overriding several keys at once (using `.jsonc`, so comments and trailing commas are fine):
 
 ```jsonc
 {
@@ -334,7 +320,7 @@ A fuller example overriding several keys at once (`.jsonc`, so comments and trai
 
   // Tweak a routing mode — objects deep-merge, so unspecified fields keep their defaults
   "modes": {
-    "deep": { "description": "Deep analysis — heavy-first, long runs" },
+    "deep": { "description": "Deep analysis: heavy-first, long runs" },
   },
 
   // Arrays REPLACE (they do not append): this becomes the entire ruleset
@@ -347,11 +333,11 @@ A fuller example overriding several keys at once (`.jsonc`, so comments and trai
 
 Run `/router overrides` to see both file paths, whether each exists, and the precedence order.
 
-Merge semantics: objects merge recursively; arrays and scalars are replaced wholesale (so an overridden `rules`/`whenToUse` list *replaces* the default, it does not append). If a file is missing, malformed, or produces an invalid config, the plugin logs a `[model-router]` warning and drops just that layer (keeping the others) — a typo in one file can never break startup or discard a valid file.
+Merge semantics: objects merge recursively; arrays and scalars are replaced wholesale (so an overridden `rules`/`whenToUse` list *replaces* the default, it does not append). If a file is missing, malformed, or produces an invalid config, the plugin logs a `[model-router]` warning and drops just that layer (keeping the others), so a typo in one file can never break startup or discard a valid file.
 
 #### Defining a whole new preset
 
-An overrides file can add a brand-new preset, not just tweak the bundled ones. `model` is the only required field per tier. `costRatio` and `steps` are optional — when omitted they fall back to the conventional **`1` / `5` / `20`** and **`30` / `50` / `120`** (by tier name, the same values the bundled presets use); `description`/`whenToUse` are display-only.
+An overrides file can add a brand-new preset, not just tweak the bundled ones. `model` is the only required field per tier. `costRatio` and `steps` are optional. When omitted they fall back to the conventional **`1` / `5` / `20`** and **`30` / `50` / `120`** (by tier name, the same values the bundled presets use); `description`/`whenToUse` are display-only.
 
 ```jsonc
 {
@@ -367,20 +353,20 @@ An overrides file can add a brand-new preset, not just tweak the bundled ones. `
 }
 ```
 
-`@fast` omits `costRatio`/`steps`, so it gets the defaults (`1` / `30`); `@medium` and `@heavy` set their own to match their real economics. **Set `costRatio` whenever your models' relative costs differ from the default ladder** — it's the price signal the orchestrator uses to pick the cheapest adequate tier. (Routing by *task type* — `@fast`=read-only, `@medium`=implementation, `@heavy`=architecture — comes from the shared `taskPatterns`/`rules`, so it works for any preset automatically.)
+`@fast` omits `costRatio`/`steps`, so it gets the defaults (`1` / `30`); `@medium` and `@heavy` set their own to match their real economics. **Set `costRatio` whenever your models' relative costs differ from the default ladder**, that's the price signal the orchestrator uses to pick the cheapest adequate tier. (Routing by *task type* - `@fast`=read-only, `@medium`=implementation, `@heavy`=architecture - comes from the shared `taskPatterns`/`rules`, so it works for any preset automatically.)
 
 The effective values, including any defaults, are shown by `/tiers`.
 
-Restart opencode after adding a new preset so its tier subagents get registered. (Each model's provider must itself be configured in your `opencode.json`.)
+Restart OpenCode after adding a new preset so its tier subagents get registered. (Each model's provider must itself be configured in your `opencode.json`.)
 
 > **`activePreset` / `activeMode` / `enforcement.mode` in an override file are _defaults_.** Runtime selections — `/preset`, `/budget`, `/router enforce` — are persisted to the state file (`~/.config/opencode/opencode-model-router.state.json`), which is applied **after** the override files and therefore wins. So the override's `activePreset` takes effect until you switch at runtime; if it ever "isn't taking", it's because a past `/preset` left a value in the state file — run `/preset <name>` again or delete that file. (The state file is machine-written, so the plugin never rewrites your hand-authored, commented override file.)
 
 ### Keeping models current
 
-You don't have to wait on a plugin release when providers ship new models. opencode already resolves a live model catalog (from models.dev plus your configured/authenticated providers), and the plugin reads it directly — no external fetch, no hardcoded list:
+You don't have to wait on a plugin release when providers ship new models. OpenCode already resolves a live model catalog (from models.dev plus your configured/authenticated providers), and the plugin reads it directly — no external fetch, no hardcoded list:
 
 - **`/router models [provider]`** lists the valid model ids for your configured providers, each annotated with the provider's default and any `deprecated`/`alpha`/`beta` status. Copy an id straight into an overrides file.
-- **Validation**: bare `/router` checks the active preset's tier models against the catalog and reports any that are missing or deprecated, with the closest valid suggestions — so a stale id surfaces immediately instead of failing silently on every subagent dispatch. The same check is logged once per session to the plugin console at startup.
+- **Validation**: bare `/router` checks the active preset's tier models against the catalog and reports any that are missing or deprecated, with the closest valid suggestions, so a stale id surfaces immediately instead of failing silently on every subagent dispatch. The same check is logged once per session to the plugin console at startup.
 
 This is report-only: the plugin never changes your models for you. It tells you exactly what's available and what to change; you set it in the overrides file.
 
@@ -489,7 +475,7 @@ Set `costRatio` on each tier to reflect your real provider pricing. These are in
 }
 ```
 
-Adjust to actual prices. Exact values don't matter — directional signals are enough.
+Adjust to actual prices. Exact values don't matter, as directional signals are enough.
 
 ### Rules
 
@@ -583,9 +569,9 @@ Independent of the numeric cap, every subagent runs a redundancy check before ea
 
 | Return prefix | Meaning |
 |--------------|---------|
-| `DONE: …` | Dispatch request fully satisfied — synthesize into final answer. |
-| `NEED MORE: …` (or `NEED CONTEXT:` for `@medium`, `SCOPE GROWTH:` for `@heavy`) | Subagent needs another targeted round — orchestrator decides what to dispatch. |
-| `ESCALATE: …` | Scope grew beyond the subagent's role — orchestrator re-routes. |
+| `DONE: …` | Dispatch request fully satisfied; synthesize into final answer. |
+| `NEED MORE: …` (or `NEED CONTEXT:` for `@medium`, `SCOPE GROWTH:` for `@heavy`) | Subagent needs another targeted round; orchestrator decides what to dispatch. |
+| `ESCALATE: …` | Scope grew beyond the subagent's role; orchestrator re-routes. |
 
 This keeps subagents from burning tokens on repeated lookups when they already have enough context. `CAP:none` lifts the numeric cap but **does not** disable the redundancy check — the runtime still injects `[⚠ REDUNDANT]` banners regardless of cap setting.
 
