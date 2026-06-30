@@ -12,7 +12,7 @@ Most AI coding tools give you one model for everything, meaning you pay frontier
 The orchestrator runs on *every* message. You should use a mid-tier model for this (just set it as your default model for Opencode). That model reads a routing protocol and delegates work just as well as any top-tier model at much lower cost. Reserve the top-tier models for when it genuinely matters. For example, when using Anthropic models, the orchestrator should be Sonnet, not Opus.
 
 **Inject the routing protocol on every message.**
-The orchestrator gets the tier taxonomy, routing rules, and (when enforcement is on) the acceptance contract in its system prompt every turn. That overhead is currently around 1.4k to 2k tokens depending on the orchestrator model and enforcement mode (see [Token overhead](#token-overhead)), while saving many times over by routing the turn's work to a cheaper tier when possible.
+The orchestrator gets the tier taxonomy, routing rules, and (when enforcement is on) the acceptance contract in its system prompt every turn. That overhead is currently around 640 to 1,030 tokens depending on the orchestrator model and enforcement mode (see [Token overhead](#token-overhead)), while saving many times over by routing the turn's work to a cheaper tier when possible.
 
 **Match task to tier using a configurable taxonomy.**
 A compact keyword routing guide (`@fast→search/grep/read`, `@medium→impl/refactor/test`, `@heavy→arch/debug/security`) tells the orchestrator exactly which tier fits each task type. Fully customizable.
@@ -65,7 +65,7 @@ If you're running Opus or GPT 5.5 for all of it, you're overpaying significantly
 4. **Never over-qualify**: use the cheapest tier that can reliably handle the task
 5. **Fallback**: if a provider/model is unavailable, try another option
 
-This protocol is injected into the system prompt on every message. The overhead is currently around 1.4k to 2k tokens depending on your orchestrator model and enforcement mode (see [Token overhead](#token-overhead)).
+This protocol is injected into the system prompt on every message. The overhead is currently around 640 to 1,030 tokens depending on your orchestrator model and enforcement mode (see [Token overhead](#token-overhead)).
 
 The plugin also adds:
 
@@ -117,7 +117,7 @@ This is the plan annotation feature. You can invoke it with `/annotate-plan`. Mo
 
 Some cooks arrive with strong habits from their previous job. Left alone they tend to wander the whole pantry "just to be thorough," or they announce what they are about to do ("now I'll dice the onions") instead of actually doing it.
 
-For those cooks the plugin clips a short note to the top of their instructions: in this kitchen your job is the dish in front of you, not a tour of the pantry. It keeps them from burning time and money on busywork. This is the adversarial prefix. There is also an optional, off-by-default add-on (the anti-narration guardrail) that tells them to cook rather than describe cooking; turn it on only if a cook keeps announcing dishes without plating them.
+For those cooks the plugin clips a short note to the top of their instructions: in this kitchen your job is the dish in front of you, not a tour of the pantry. It keeps them from burning time and money on busywork. This is the adversarial prefix. There is also an optional, off-by-default add-on (the anti-narration guardrail) that tells them to cook rather than describe cooking; turn it on only if a model keeps announcing it will do work but never really does it (this can be common on small/older models).
 
 ### Setting the kitchen's priorities
 
@@ -172,7 +172,7 @@ Task distribution: 18 exploration (60%), 10 implementation (33%), 2 architecture
 
 ## Inner workings
 
-On every message, the plugin injects the delegation protocol into the orchestrator's system prompt. It encodes the tier taxonomy, routing rules, per-tier guidance, and (when enforcement is on) the acceptance contract. Current size is roughly 1.4k to 2k tokens depending on the orchestrator model and enforcement mode; see [Token overhead](#token-overhead) for the breakdown and the levers that shrink it.
+On every message, the plugin injects the delegation protocol into the orchestrator's system prompt. It encodes the tier taxonomy, routing rules, per-tier guidance, and (when enforcement is on) the acceptance contract. Current size is roughly 640 to 1,030 tokens depending on the orchestrator model and enforcement mode; see [Token overhead](#token-overhead) for the breakdown and the levers that shrink it.
 
 The routing grammar at the heart of it, abridged for readability (the full injected text also carries a `HARD ROUTING` block, per-tier contracts, and the acceptance section):
 
@@ -662,7 +662,7 @@ No configuration is needed — the prefixes are always applied for Claude-backed
 
 Some Claude models (historically, thinking-enabled Sonnet with the `max` variant) can produce progress narration instead of actual work, phrasings like *"Still writing the X function..."*, *"Now I'll implement Y..."*, *"Let me add Z..."*, without the X/Y/Z ever appearing.
 
-This guardrail is **off by default**. It costs ~162 tokens per Claude dispatch (the prompt clause) and its detector false-positives on normal productive phrasing like "Now I'll add the test" when the test does follow, so it is opt-in. Enable it only if you actually observe narration-without-production on your models:
+This guardrail is **off by default**. It costs ~162 tokens per Claude dispatch (the prompt clause) and its detector can generate false-positives on normal productive phrasing like "Now I'll add the test" when the test does follow, so it is opt-in. Enable it only if you actually observe narration-without-production on your models:
 
 ```jsonc
 { "antiNarration": true }
@@ -670,7 +670,7 @@ This guardrail is **off by default**. It costs ~162 tokens per Claude dispatch (
 
 When enabled, it works on two layers:
 
-**1. Prompt-level clause (prevention).** A dedicated `ANTI-NARRATION` block is appended to every Claude-backed tier prompt and to the Claude-backed orchestrator delegation protocol. It names the forbidden phrasings explicitly and requires concrete output to follow any such phrase. A carve-out preserves legitimate explanation/plan requests from the user.
+**1. Prompt-level clause (prevention).** A dedicated `ANTI-NARRATION` block is appended to every Claude-backed tier prompt and to the Claude-backed orchestrator delegation protocol. It names the forbidden phrasings explicitly and requires concrete output to follow any such phrase. An "escape hatch" preserves legitimate explanation/plan requests from the user.
 
 **2. Post-hoc detector (telemetry).** An `experimental.text.complete` hook scans completed text for narration regex patterns. On match, it:
 
@@ -683,7 +683,7 @@ When enabled, it works on two layers:
   [⚠ narration detected: "Still writing the auth", "Now I'll add the tests"]
   ```
 
-The detector is not blocking — plugin hooks cannot modify tokens mid-stream. It signals post-hoc so you can spot the pattern in the UI and in logs, and judge whether the prompt-level clause is holding up.
+The detector is not blocking, because plugin hooks cannot modify tokens mid-stream. It signals post-hoc so you can spot the pattern in the UI and in logs, and judge whether the prompt-level clause is holding up.
 
 Detected patterns (conservative set to minimize false positives):
 
@@ -801,24 +801,30 @@ After `/annotate-plan`:
 
 ## Token overhead
 
-The delegation protocol is injected into the orchestrator's system prompt on every message. Measured against the currently shipped protocol (approximate tokens):
+The delegation protocol is injected into the orchestrator's system prompt on every message. Measured against the current protocol (approximate tokens, for the `anthropic` preset; other presets differ by a few tokens):
 
 | Orchestrator + mode | ~tokens/msg |
 |---|---|
-| non-Claude orchestrator, `enforcement: off` | ~1,400 |
-| non-Claude orchestrator, advisory (default) | ~1,600 |
-| Claude orchestrator, `enforcement: off` | ~1,750 |
-| Claude orchestrator, advisory (default) | ~1,950 |
+| non-Claude orchestrator, `enforcement: off` | ~640 |
+| non-Claude orchestrator, advisory (default) | ~835 |
+| Claude orchestrator, `enforcement: off` | ~830 |
+| Claude orchestrator, advisory (default) | ~1,030 |
 
-Two things drive the size: a Claude orchestrator gets an extra adversarial / anti-narration prefix (~350 tokens), and advisory or enforced mode adds the acceptance-contract section (~200 tokens). To minimize overhead, run a non-Claude orchestrator and/or set `enforcement.mode: "off"`.
+Three things add to the ~640-token core:
+- **Claude orchestrator**: an adversarial prefix that revokes the cached "explore broadly" priming (~190 tokens). Always on for Claude orchestrators.
+- **Advisory or enforced mode**: the acceptance-contract section (~200 tokens).
+- **`antiNarration: true`** (off by default): the anti-narration clause (~160 tokens). Not included above.
 
-The protocol was much smaller in early versions (~210 tokens through v1.1). It grew when the enforcement layer and Claude-hardening prefixes were added, and a good chunk of the current size is redundancy (the routing rules and caps are each stated more than once).
+To minimize overhead: run a non-Claude orchestrator and/or set `enforcement.mode: "off"`.
+
+The protocol was ~210 tokens through v1.1, then grew to ~1,400 to 1,950 in v1.2 to v1.4 when the enforcement layer and Claude-hardening prefixes were added, with the routing rules and caps stated more than once. The current numbers above reflect a pass that collapsed that redundancy and made anti-narration opt-in.
 
 | Version | Approx tokens | Notes |
 |---------|--------|----------|
 | v1.0.7 | ~208 | basic tier routing |
 | v1.1.x | ~210 | all features, compact format |
 | v1.2 to v1.4 | ~1,400 to 1,950 | added enforcement layer + Claude-hardening prefixes |
+| current | ~640 to 1,030 | trimmed redundant prose; anti-narration made opt-in |
 
 ## Requirements
 
