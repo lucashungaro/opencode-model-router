@@ -174,6 +174,23 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       const trivial = childSessionID
         ? sessionStore.isTrivial(childSessionID)
         : false;
+
+      // Read-only / research delegation: an auto-inferred, criteria-only DoD on a
+      // native Task() that changed no files is exploration, not implementation.
+      // There is nothing concrete to verify, so skip rather than grade the
+      // findings against the task's own summary, which otherwise appends false
+      // "not accepted" notes to legitimate read-only research delegations.
+      // Explicit [acceptance] blocks (source != "inferred") and inferred
+      // deterministic checks (dod.kind === "deterministic") still verify normally.
+      if (
+        dod.source === "inferred" &&
+        dod.kind === "checker" &&
+        artefact.changedFiles.length === 0
+      ) {
+        if (childSessionID) changedFileStore.clear(childSessionID);
+        return;
+      }
+
       const res = await accept(
         { dod, trivial, mode: "modeA" },
         artefact,
