@@ -5,6 +5,35 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-08-08
+
+### Changed — all five presets refreshed to current models
+
+Every bundled preset was one to two generations behind. New defaults:
+
+| preset | @fast | @medium | @heavy |
+|---|---|---|---|
+| `anthropic` | `claude-haiku-4-5` | `claude-sonnet-5` | `claude-opus-5` (high) |
+| `openai` | `gpt-5.6-luna` | `gpt-5.6-terra` | `gpt-5.6-sol` (high) |
+| `github-copilot` | `gpt-5.6-luna` | `claude-sonnet-5` | `claude-opus-5` (high) |
+| `google` | `gemini-3.6-flash` | `gemini-2.5-pro` | `gemini-3.1-pro-preview` (high) |
+| `hybrid` | `openai/gpt-5.6-luna` | `anthropic/claude-sonnet-5` | `anthropic/claude-opus-5` (high) |
+
+- **`max` is gone as a variant, everywhere.** Variants are now uniform across presets:
+  none on `@fast` and `@medium`, `"variant": "high"` on `@heavy`. `max` was Anthropic
+  direct-API naming that broke when a tier was pointed at the same model through another
+  provider — and since `variant` is not validated, it failed at dispatch rather than at
+  config load. The uniform convention also means an overrides file that repoints a tier's
+  `model` no longer inherits a variant that the new provider doesn't recognize.
+- **`hybrid` and `github-copilot` now share one shape** — cheap GPT for exploration, Claude
+  Sonnet for implementation, Claude Opus for the hard tier — differing only in whether they
+  route through the vendor APIs or through Copilot.
+- Tier `description` fields were rewritten to match the new models; `costRatio`, `steps`,
+  `whenToUse`, `tierCaps`, `rules`, `modes`, and `taskPatterns` are unchanged.
+
+Overrides files are unaffected: anything you set in
+`opencode-model-router.overrides.jsonc` still wins over these defaults.
+
 ## [1.5.0] — 2026-08-08
 
 First release of the fork. Published to npm as **`@lucashungaro/opencode-model-router`**;

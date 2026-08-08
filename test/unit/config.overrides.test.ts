@@ -116,7 +116,7 @@ describe("loadConfig — user overrides file", () => {
   it("returns the bundled config unchanged when no override file exists", () => {
     const cfg = loadConfig();
     expect(cfg.presets["github-copilot"]!.heavy!.model).toBe(
-      "github-copilot/claude-opus-4.8",
+      "github-copilot/claude-opus-5",
     );
     expect(warnSpy).not.toHaveBeenCalled();
   });
@@ -193,7 +193,7 @@ describe("loadConfig — user overrides file", () => {
     writeOverride("{ not valid json ");
     const cfg = loadConfig();
     expect(cfg.presets["github-copilot"]!.heavy!.model).toBe(
-      "github-copilot/claude-opus-4.8",
+      "github-copilot/claude-opus-5",
     );
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("invalid JSON"),

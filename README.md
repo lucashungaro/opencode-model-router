@@ -193,7 +193,7 @@ The routing grammar at the heart of it, abridged for readability (the full injec
 
 ```
 ## Model Delegation Protocol
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x). mode:normal
+Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-5(5x) @heavy=claude-opus-5/high(20x). mode:normal
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable. Cheapest-first when practical.
 1.[tier:X] tag in plan→delegate X 2.plan:fast/cheap→@fast | plan:medium→@medium | plan:heavy→@heavy 3.default preference: read-only→@fast | implementation→@medium 4.orchestrate=self,execute=subagent 5.trivial(≤1 tool call,no expected follow-up)→direct,skip-delegate 6.before @heavy: gather context first(usually via @fast); if already sufficient, dispatch directly 7.if self is opus: skip-@heavy(do locally), still route broader read-only exploration to @fast 8.min(cost,adequate-tier)
@@ -237,7 +237,7 @@ Why: the orchestrator runs on every message, including trivial ones. A balanced 
 In your `opencode.json`, set the default model (your orchestrator):
 ```json
 {
-  "model": "anthropic/claude-sonnet-4-6",
+  "model": "anthropic/claude-sonnet-5",
   "autoshare": false
 }
 ```
@@ -313,7 +313,7 @@ The project file deep-merges over (and wins against) the global file, which in t
 {
   "presets": {
     "github-copilot": {
-      "heavy": { "model": "github-copilot/claude-opus-4.8", "variant": "high" }
+      "heavy": { "model": "github-copilot/claude-opus-5", "variant": "high" }
     }
   }
 }
@@ -328,7 +328,7 @@ A fuller example overriding several keys at once (using `.jsonc`, so comments an
   // Point one tier at a different model and give it a bigger step budget
   "presets": {
     "github-copilot": {
-      "heavy": { "model": "github-copilot/claude-opus-4.8", "variant": "high", "steps": 160 },
+      "heavy": { "model": "github-copilot/claude-opus-5", "variant": "high", "steps": 160 },
     },
   },
 
@@ -401,36 +401,38 @@ The plugin ships with five presets (switch with `/preset <name>`):
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
 | @fast | `anthropic/claude-haiku-4-5` | 1x |
-| @medium | `anthropic/claude-sonnet-4-6` (max) | 5x |
-| @heavy | `anthropic/claude-opus-4-8` (max) | 20x |
+| @medium | `anthropic/claude-sonnet-5` | 5x |
+| @heavy | `anthropic/claude-opus-5` (high) | 20x |
 
 **openai**:
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
-| @fast | `openai/gpt-5.4-mini-fast` | 1x |
-| @medium | `openai/gpt-5.5-fast` (high) | 5x |
-| @heavy | `openai/gpt-5.5-fast` (xhigh) | 20x |
+| @fast | `openai/gpt-5.6-luna` | 1x |
+| @medium | `openai/gpt-5.6-terra` | 5x |
+| @heavy | `openai/gpt-5.6-sol` (high) | 20x |
 
 **github-copilot**:
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
-| @fast | `github-copilot/claude-haiku-4.5` | 1x |
-| @medium | `github-copilot/claude-sonnet-4.6` | 5x |
-| @heavy | `github-copilot/claude-opus-4.8` (high) | 20x |
+| @fast | `github-copilot/gpt-5.6-luna` | 1x |
+| @medium | `github-copilot/claude-sonnet-5` | 5x |
+| @heavy | `github-copilot/claude-opus-5` (high) | 20x |
 
 **google**:
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
-| @fast | `google/gemini-2.5-flash` | 1x |
+| @fast | `google/gemini-3.6-flash` | 1x |
 | @medium | `google/gemini-2.5-pro` | 5x |
-| @heavy | `google/gemini-3-pro-preview` | 20x |
+| @heavy | `google/gemini-3.1-pro-preview` (high) | 20x |
 
 **hybrid** (mixed providers):
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
-| @fast | `anthropic/claude-haiku-4-5` | 1x |
-| @medium | `openai/gpt-5.5-fast` (high) | 5x |
-| @heavy | `anthropic/claude-opus-4-8` (max) | 20x |
+| @fast | `openai/gpt-5.6-luna` | 1x |
+| @medium | `anthropic/claude-sonnet-5` | 5x |
+| @heavy | `anthropic/claude-opus-5` (high) | 20x |
+
+Every preset follows the same variant convention: no `variant` on `@fast`/`@medium`, and `"variant": "high"` on `@heavy`.
 
 ### Routing modes
 
@@ -621,8 +623,8 @@ Each tier (`@fast`, `@medium`, `@heavy`) has a system prompt that describes its 
   "presets": {
     "anthropic": {
       "fast":   { "model": "anthropic/claude-haiku-4-5", ... },
-      "medium": { "model": "anthropic/claude-sonnet-4-6", ... },
-      "heavy":  { "model": "anthropic/claude-opus-4-8", ... }
+      "medium": { "model": "anthropic/claude-sonnet-5", ... },
+      "heavy":  { "model": "anthropic/claude-opus-5", ... }
     }
   }
 }
@@ -641,7 +643,7 @@ Each tier (`@fast`, `@medium`, `@heavy`) has a system prompt that describes its 
   "presets": {
     "google": {
       "fast": {
-        "model": "google/gemini-2.5-flash",
+        "model": "google/gemini-3.6-flash",
         "prompt": "You are @fast (Gemini-tuned variant) — ...",
         ...
       }
@@ -675,7 +677,7 @@ Detection is by model string, not preset. A `hybrid` preset that mixes providers
 **Detection rules:**
 
 - `anthropic/<anything>` → Claude
-- `<provider>/claude-<anything>` (e.g. `github-copilot/claude-sonnet-4-6`) → Claude
+- `<provider>/claude-<anything>` (e.g. `github-copilot/claude-sonnet-5`) → Claude
 - `<provider>/<namespace>.claude-<anything>` (e.g. `bedrock/us.anthropic.claude-3-5-sonnet-...`) → Claude
 - Everything else → untouched
 
@@ -724,7 +726,7 @@ When `antiNarration` is enabled, the detector runs for all models (not only Clau
 | Field | Type | Description |
 |-------|------|-------------|
 | `model` | string | Full model ID (`provider/model-name`) |
-| `variant` | string | Optional variant (`"max"`, `"xhigh"`, `"thinking"`) |
+| `variant` | string | Optional reasoning-effort variant (`"high"`, `"xhigh"`, `"thinking"`). Not validated — an unrecognized value fails at dispatch, not at config load. Set `""` to clear a variant inherited from the bundled preset. |
 | `costRatio` | number | Relative cost (1 = cheapest). Shown in prompt. |
 | `thinking` | object | Anthropic thinking: `{ "budgetTokens": 10000 }` |
 | `reasoning` | object | OpenAI reasoning: `{ "effort": "high", "summary": "detailed" }` |

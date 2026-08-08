@@ -154,7 +154,7 @@ The decide/mutate logic lives in the handler closure; the three return paths are
 │                                                                 │
 │ ## Model Delegation Protocol                                    │
 │ Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x)           │
-│   @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max  │
+│   @medium=claude-sonnet-5(5x) @heavy=claude-opus-5/high(20x)   │
 │ R: @fast→search/grep/read... @medium→impl... @heavy→arch...     │
 │ Multi-phase: explore(@fast)→execute(@medium) when separable.    │
 │ Err→retry-alt-tier→fail→direct. Chain:                          │

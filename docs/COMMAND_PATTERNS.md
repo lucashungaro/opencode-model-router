@@ -151,7 +151,7 @@ The hooks that need fresh config call `loadConfig()` (returns the cache unless i
 
 ```
 ## Model Delegation Protocol
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x). mode:normal
+Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-5(5x) @heavy=claude-opus-5/high(20x). mode:normal
 R: @fast→search/grep/read/... @medium→impl-feature/refactor/... @heavy→arch-design/debug(≥3fail)/...
 Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable.
 Err→retry-alt-tier→fail→direct. Chain: anthropic→openai→google→github-copilot

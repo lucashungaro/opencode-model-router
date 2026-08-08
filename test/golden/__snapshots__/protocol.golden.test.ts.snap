@@ -5,7 +5,7 @@ exports[`protocol golden > protocol-anthropic > protocol-anthropic 1`] = `
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x).
+Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-5(5x) @heavy=claude-opus-5/high(20x).
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
@@ -25,7 +25,7 @@ exports[`protocol golden > protocol-anthropic-mode-budget > protocol-anthropic-m
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x). mode:budget
+Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-5(5x) @heavy=claude-opus-5/high(20x). mode:budget
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
@@ -43,7 +43,7 @@ exports[`protocol golden > protocol-anthropic-mode-deep > protocol-anthropic-mod
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x). mode:deep
+Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-5(5x) @heavy=claude-opus-5/high(20x). mode:deep
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
@@ -61,7 +61,7 @@ exports[`protocol golden > protocol-anthropic-mode-normal > protocol-anthropic-m
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x). mode:normal
+Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-5(5x) @heavy=claude-opus-5/high(20x). mode:normal
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
@@ -81,7 +81,7 @@ exports[`protocol golden > protocol-anthropic-mode-quality > protocol-anthropic-
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x). mode:quality
+Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-5(5x) @heavy=claude-opus-5/high(20x). mode:quality
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
@@ -99,7 +99,7 @@ exports[`protocol golden > protocol-github-copilot > protocol-github-copilot 1`]
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: github-copilot. Tiers: @fast=claude-haiku-4.5(1x) @medium=claude-sonnet-4.6(5x) @heavy=claude-opus-4.8/high(20x).
+Preset: github-copilot. Tiers: @fast=gpt-5.6-luna(1x) @medium=claude-sonnet-5(5x) @heavy=claude-opus-5/high(20x).
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
@@ -119,7 +119,7 @@ exports[`protocol golden > protocol-google > protocol-google 1`] = `
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: google. Tiers: @fast=gemini-2.5-flash(1x) @medium=gemini-2.5-pro(5x) @heavy=gemini-3-pro-preview(20x).
+Preset: google. Tiers: @fast=gemini-3.6-flash(1x) @medium=gemini-2.5-pro(5x) @heavy=gemini-3.1-pro-preview/high(20x).
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
@@ -139,7 +139,7 @@ exports[`protocol golden > protocol-hybrid > protocol-hybrid 1`] = `
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: hybrid. Tiers: @fast=claude-haiku-4-5(1x) @medium=gpt-5.5-fast/high(5x) @heavy=claude-opus-4-8/max(20x).
+Preset: hybrid. Tiers: @fast=gpt-5.6-luna(1x) @medium=claude-sonnet-5(5x) @heavy=claude-opus-5/high(20x).
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
@@ -159,7 +159,7 @@ exports[`protocol golden > protocol-openai > protocol-openai 1`] = `
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: openai. Tiers: @fast=gpt-5.4-mini-fast(1x) @medium=gpt-5.5-fast/high(5x) @heavy=gpt-5.5-fast/xhigh(20x).
+Preset: openai. Tiers: @fast=gpt-5.6-luna(1x) @medium=gpt-5.6-terra(5x) @heavy=gpt-5.6-sol/high(20x).
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
