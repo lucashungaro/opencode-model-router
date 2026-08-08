@@ -16,11 +16,18 @@ Every bundled preset was one to two generations behind. New defaults:
 | `anthropic` | `claude-haiku-4-5` | `claude-sonnet-5` | `claude-opus-5` (high) |
 | `openai` | `gpt-5.6-luna` | `gpt-5.6-terra` | `gpt-5.6-sol` (high) |
 | `github-copilot` | `gpt-5.6-luna` | `claude-sonnet-5` | `claude-opus-5` (high) |
-| `google` | `gemini-3.6-flash` | `gemini-2.5-pro` | `gemini-3.1-pro-preview` (high) |
+| `google` | `gemini-3.5-flash-lite` | `gemini-3.6-flash` | `gemini-3.1-pro-preview` |
 | `hybrid` | `openai/gpt-5.6-luna` | `anthropic/claude-sonnet-5` | `anthropic/claude-opus-5` (high) |
 
+- **The `google` preset is now laddered by model class** (Flash-Lite → Flash → Pro) rather
+  than by version number. Gemini version digits do not track capability across classes —
+  `gemini-3.5-flash` is documented as more capable than `gemini-3.6-flash` for agentic and
+  coding work — so class is the only ordering that reliably maps onto the tier ladder. It
+  also carries no `variant` on any tier, since these models are separated by class rather
+  than by reasoning effort. Note that no stable Pro model exists; `@heavy` is a preview
+  model, which carries tighter rate limits and a short deprecation notice.
 - **`max` is gone as a variant, everywhere.** Variants are now uniform across presets:
-  none on `@fast` and `@medium`, `"variant": "high"` on `@heavy`. `max` was Anthropic
+  none on `@fast` and `@medium`, `"variant": "high"` on `@heavy` (except `google`). `max` was Anthropic
   direct-API naming that broke when a tier was pointed at the same model through another
   provider — and since `variant` is not validated, it failed at dispatch rather than at
   config load. The uniform convention also means an overrides file that repoints a tier's

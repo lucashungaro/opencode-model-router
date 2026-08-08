@@ -132,9 +132,9 @@
     },
     "google": {
       "fast": {
-        "model": "google/gemini-3.6-flash",
+        "model": "google/gemini-3.5-flash-lite",
         "costRatio": 1,
-        "description": "Gemini 3.6 Flash for exploration, search, and simple reads",
+        "description": "Gemini 3.5 Flash-Lite for exploration, search, and simple reads",
         "steps": 30,
         "whenToUse": [
           "Codebase exploration and search",
@@ -144,9 +144,9 @@
         ]
       },
       "medium": {
-        "model": "google/gemini-2.5-pro",
+        "model": "google/gemini-3.6-flash",
         "costRatio": 5,
-        "description": "Gemini 2.5 Pro for implementation, refactoring, and tests",
+        "description": "Gemini 3.6 Flash for implementation, refactoring, and tests",
         "steps": 50,
         "whenToUse": [
           "Feature implementation",
@@ -158,9 +158,8 @@
       },
       "heavy": {
         "model": "google/gemini-3.1-pro-preview",
-        "variant": "high",
         "costRatio": 20,
-        "description": "Gemini 3.1 Pro at high effort for architecture, complex debugging, and security",
+        "description": "Gemini 3.1 Pro for architecture, complex debugging, and security",
         "steps": 120,
         "whenToUse": [
           "Architecture decisions",

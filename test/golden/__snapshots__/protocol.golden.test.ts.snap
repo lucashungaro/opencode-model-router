@@ -119,7 +119,7 @@ exports[`protocol golden > protocol-google > protocol-google 1`] = `
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: google. Tiers: @fast=gemini-3.6-flash(1x) @medium=gemini-2.5-pro(5x) @heavy=gemini-3.1-pro-preview/high(20x).
+Preset: google. Tiers: @fast=gemini-3.5-flash-lite(1x) @medium=gemini-3.6-flash(5x) @heavy=gemini-3.1-pro-preview(20x).
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 

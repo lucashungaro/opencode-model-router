@@ -421,9 +421,9 @@ The plugin ships with five presets (switch with `/preset <name>`):
 **google**:
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
-| @fast | `google/gemini-3.6-flash` | 1x |
-| @medium | `google/gemini-2.5-pro` | 5x |
-| @heavy | `google/gemini-3.1-pro-preview` (high) | 20x |
+| @fast | `google/gemini-3.5-flash-lite` | 1x |
+| @medium | `google/gemini-3.6-flash` | 5x |
+| @heavy | `google/gemini-3.1-pro-preview` | 20x |
 
 **hybrid** (mixed providers):
 | Tier | Model | Cost ratio |
@@ -432,7 +432,7 @@ The plugin ships with five presets (switch with `/preset <name>`):
 | @medium | `anthropic/claude-sonnet-5` | 5x |
 | @heavy | `anthropic/claude-opus-5` (high) | 20x |
 
-Every preset follows the same variant convention: no `variant` on `@fast`/`@medium`, and `"variant": "high"` on `@heavy`.
+Every preset follows the same variant convention: no `variant` on `@fast`/`@medium`, and `"variant": "high"` on `@heavy`. The `google` preset is the exception — it sets no variant on any tier, because the Gemini models are tiered by class (Flash-Lite → Flash → Pro) rather than by reasoning effort.
 
 ### Routing modes
 
