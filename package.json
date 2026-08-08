@@ -1,6 +1,6 @@
 {
-  "name": "opencode-model-router",
-  "version": "1.4.0",
+  "name": "@lucashungaro/opencode-model-router",
+  "version": "1.5.0",
   "description": "OpenCode plugin that routes tasks to tiered subagents (fast/medium/heavy) based on complexity",
   "type": "module",
   "main": "./src/index.ts",
@@ -14,16 +14,22 @@
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/marco-jardim/opencode-model-router.git"
+    "url": "git+https://github.com/lucashungaro/opencode-model-router.git"
   },
-  "homepage": "https://github.com/marco-jardim/opencode-model-router",
+  "homepage": "https://github.com/lucashungaro/opencode-model-router",
   "bugs": {
-    "url": "https://github.com/marco-jardim/opencode-model-router/issues"
+    "url": "https://github.com/lucashungaro/opencode-model-router/issues"
   },
   "author": {
     "name": "Marco Jardim",
     "url": "https://github.com/marco-jardim"
   },
+  "contributors": [
+    {
+      "name": "Lucas Húngaro",
+      "url": "https://github.com/lucashungaro"
+    }
+  ],
   "keywords": [
     "opencode",
     "claude-code",
@@ -38,7 +44,8 @@
     "src/",
     "tiers.json",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.0.0"

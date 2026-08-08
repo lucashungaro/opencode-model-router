@@ -5,6 +5,44 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-08-08
+
+First release of the fork. Published to npm as **`@lucashungaro/opencode-model-router`**;
+upstream [`marco-jardim/opencode-model-router`](https://github.com/marco-jardim/opencode-model-router)
+has been inactive since 2026-06-06 and its npm package remains at 1.3.0. Same GPL-3.0-only
+license, original copyright preserved. See [README](./README.md#fork-notice) for the
+divergence notice.
+
+### Changed
+
+- **Package renamed** to `@lucashungaro/opencode-model-router`. Install with
+  `"plugin": ["@lucashungaro/opencode-model-router"]`. Remove any `opencode-model-router`
+  entry from your `plugin` array first — listing both loads the plugin twice.
+
+### Fixed
+
+- **Read-only research delegations are no longer failed by the grader.** `inferDoD` always
+  synthesizes a criterion from the task's first line, so a native `Task()` that only gathered
+  information was judged against an imperative criterion and got a false `NOT ACCEPTED`
+  forcing note appended. Layer-2 verification is now skipped when the DoD is inferred +
+  checker-kind *and* the delegation touched no files. Explicit `[acceptance]` blocks and
+  inferred deterministic checks (`build`/`test`/`fileExists`) still verify normally.
+
+### Performance
+
+- **Delegation protocol trimmed ~55%** (core `~1,396 → 632` tokens; typical Claude+advisory
+  injection `~1,951 → 1,187`). Routing, caps, and the orchestrator role had each been stated
+  2–3 times across hardcoded prose that restated the configurable taxonomy and rules.
+  Removed the `HARD ROUTING`, `DISPATCH CAPS`, `ROLE CONTRACT`, `CONFLICT-WITH-CLAUDE.md`,
+  and per-tier contract blocks — behavior is unchanged, since routing lives in the
+  configurable `R:` taxonomy + numbered rules, cap syntax in rule 7, and per-tier
+  behavioral contracts reach subagents through their own `tierPrompts`.
+- **Anti-narration is now opt-in** via a new top-level `antiNarration` boolean (default
+  `false`), dropping a further ~162 tokens per Claude dispatch (`~1,187 → 1,025` on the
+  github-copilot preset). It gated two things: a prompt clause, and a non-blocking post-hoc
+  detector that could not prevent or fix anything and false-positived on ordinary productive
+  phrasing. The Claude adversarial prefix itself remains always-on.
+
 ## [1.4.0]
 
 ### Added

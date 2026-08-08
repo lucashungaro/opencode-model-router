@@ -1,8 +1,23 @@
-# opencode-model-router
+# @lucashungaro/opencode-model-router
 
 > **Automatically use the cheapest model that can do the job.**
 
 An [OpenCode](https://opencode.ai) plugin that routes every coding task to the right-priced AI tier, automatically, on every message.
+
+## Fork notice
+
+This is a fork of [`marco-jardim/opencode-model-router`](https://github.com/marco-jardim/opencode-model-router) by Marco Jardim, maintained by [Lucas Húngaro](https://github.com/lucashungaro) and published to npm as **`@lucashungaro/opencode-model-router`**.
+
+Upstream has had no commits since 2026-06-06 and its npm package is still at 1.3.0; [PR #12](https://github.com/marco-jardim/opencode-model-router/pull/12) has been open without response since 2026-06-20. This fork diverged in August 2026 to keep the plugin installable and maintained.
+
+Changes made in this fork, relative to upstream 1.3.0 — see the [CHANGELOG](./CHANGELOG.md) for detail:
+
+- Corrected GitHub Copilot preset model IDs (upstream ids raised `ProviderModelNotFoundError` on dispatch)
+- Update-safe `.overrides.jsonc` config layering, live model discovery, and `/router overrides` + `/router models`
+- Delegation protocol trimmed ~55%, and anti-narration made opt-in (~39% less injected overhead in total)
+- Fixed the Layer-2 grader falsely rejecting read-only research delegations
+
+Still [GPL-3.0-only](./LICENSE), with the original copyright intact. If upstream becomes active again, these changes are offered there first.
 
 ## Main features and characteristics
 
@@ -232,18 +247,26 @@ Then install and configure model-router to handle the rest.
 ## Installation
 
 ### From npm (recommended)
-```bash
-# In your opencode project or globally
-npm install -g opencode-model-router
-```
 
 Add it to the `plugin` array in `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "plugin": ["opencode-model-router"]
+  "plugin": ["@lucashungaro/opencode-model-router"]
 }
 ```
+
+That is the whole install. OpenCode resolves npm plugin specs itself and installs them into its own cache (`~/.cache/opencode/`) at startup — there is no separate `npm install` step.
+
+To pin a version instead of tracking latest:
+
+```json
+{
+  "plugin": ["@lucashungaro/opencode-model-router@1.5.0"]
+}
+```
+
+> **Migrating from the upstream package?** Remove any `"opencode-model-router"` entry from your `plugin` array when you add this one. Listing both loads the plugin twice — you'd get duplicate protocol injection and double banners. Your `opencode-model-router.overrides.jsonc` and `.state.json` files keep working unchanged; those filenames are not affected by the package rename.
 
 ### Local clone (for development)
 
@@ -255,7 +278,7 @@ Local plugins are loaded as TypeScript files placed in a plugins directory:
 Clone the repo, then drop a one-line **re-export shim** in one of those directories pointing at your working copy:
 
 ```bash
-git clone https://github.com/<repo-owner>/opencode-model-router
+git clone https://github.com/lucashungaro/opencode-model-router
 cd opencode-model-router
 npm install
 
