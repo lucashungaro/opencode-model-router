@@ -84,6 +84,18 @@ export interface RouterConfig {
    * "Now I'll add X" phrasing.
    */
   antiNarration?: boolean;
+  /**
+   * Opt-in map of pre-existing agent name → tier name, e.g.
+   * `{ "ContextScout": "fast" }`. Listed agents are repointed at the active
+   * preset's model for that tier, so they follow `/preset` instead of pinning
+   * a model id in their own definition. Absent or empty ⇒ feature is off and
+   * no agent is touched.
+   *
+   * Keys are opencode agent names — the frontmatter `name:` field when a
+   * markdown agent declares one, otherwise its path-derived name. List only
+   * subagents; a primary agent is the orchestrator.
+   */
+  subagentTiers?: Record<string, string>;
   /** Experimental, opt-in features. Off by default. */
   experimental?: { verifiedDelegateTool?: boolean };
 }
@@ -282,6 +294,23 @@ function validateTierPrompts(obj: Record<string, unknown>): void {
   }
 }
 
+function validateSubagentTiers(obj: Record<string, unknown>): void {
+  if (obj.subagentTiers === undefined) return;
+  if (!isPlainObject(obj.subagentTiers)) {
+    throw new Error("tiers.json: 'subagentTiers' must be an object");
+  }
+  for (const [agentName, tierName] of Object.entries(obj.subagentTiers)) {
+    if (typeof tierName !== "string" || tierName === "") {
+      throw new Error(
+        `tiers.json: subagentTiers.'${agentName}' must be a non-empty tier name`,
+      );
+    }
+  }
+  // Deliberately not checking that the tier exists: a map may name a tier that
+  // only some presets define, and switching preset must never brick startup.
+  // Unknown tiers are skipped at resolve time (see resolveSubagentOverrides).
+}
+
 function validateTaskPatterns(obj: Record<string, unknown>): void {
   if (obj.taskPatterns === undefined) return;
   if (!isPlainObject(obj.taskPatterns)) {
@@ -436,6 +465,7 @@ export function validateConfig(raw: unknown): RouterConfig {
   validateTierCaps(obj);
   validateTierPrompts(obj);
   validateTaskPatterns(obj);
+  validateSubagentTiers(obj);
   validateEnforcement(obj);
 
   return raw as RouterConfig;

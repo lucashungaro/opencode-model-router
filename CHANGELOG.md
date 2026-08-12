@@ -5,6 +5,31 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`subagentTiers` — route your own pre-existing subagents (opt-in).** A map of agent
+  name → tier name (`{ "ContextScout": "fast" }`) repoints those agents at the active
+  preset's models, so they follow `/preset` instead of pinning a model id in their own
+  definition. Absent or empty ⇒ nothing is touched.
+
+  This closes a real gap: a custom subagent that declares no `model` inherits the model
+  of whichever agent invoked it, so read-only helpers silently run at orchestrator
+  prices, and opencode has no wildcard for setting them in bulk — every agent must be
+  listed individually.
+
+  Entries are skipped, never fatal, when the tier doesn't exist in the active preset,
+  when the key collides with a tier name, or when the agent is already registered as a
+  non-subagent. The map deliberately wins over an agent's own `model` — that is what
+  lets hardcoded model ids be removed from agent files. `variant` is set or cleared
+  explicitly rather than merged, so a tier without one can't leave a foreign provider's
+  variant behind.
+
+  Note this cannot do per-invocation routing: no opencode hook can change the model of
+  an in-flight request (`chat.params` exposes `model` as read-only input), so the
+  assignment happens once, at config load.
+
 ## [1.6.0] — 2026-08-08
 
 ### Changed — all five presets refreshed to current models
