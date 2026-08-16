@@ -219,7 +219,7 @@ exports[`protocol golden > protocol-github-copilot > protocol-github-copilot 1`]
 
 You are the orchestrator. Information-gathering is NOT orchestration — it IS execution. Execution belongs to subagents, not to you.
 
-Preset: github-copilot. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6(5x) @heavy=claude-opus-4-6/thinking(20x).
+Preset: github-copilot. Tiers: @fast=claude-haiku-4.5(1x) @medium=claude-sonnet-4.6(5x) @heavy=claude-opus-4.6(20x).
 
 ### HARD ROUTING (non-negotiable)
 - **Read-only work** (grep, glob, read, ls, lookup, count, git-info, doc-lookup, type-check, exists-check) → default to \`Task(subagent_type="fast", ...)\`. Self-cap (TARGET): ≤2 direct read-only calls per user turn; on the 3rd read-only need, dispatch @fast instead. You may exceed with a 1-line \`reason:\` note when dispatching feels clearly wrong. Rationale: every tool-result token is billed at your tier rate — a grep via @fast costs ~20x less than the same grep here.
