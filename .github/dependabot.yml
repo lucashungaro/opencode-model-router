@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # vitest and its first-party plugins share a lockstep peer dependency
+      # (@vitest/coverage-v8 pins `peer vitest@<exact>`), so they must be
+      # bumped in a single PR or the install fails to resolve.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
