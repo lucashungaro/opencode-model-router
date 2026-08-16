@@ -5,6 +5,44 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-08-16
+
+Patch release: bug fixes, documentation, and release-engineering only. No runtime
+behaviour changes beyond the corrected `github-copilot` model identifiers.
+
+### Fixed
+
+- **`github-copilot` preset model IDs** now use the dot-separated form the provider
+  actually serves (`claude-haiku-4.5`, `claude-sonnet-4.6`, `claude-opus-4.6`) instead of
+  the dash-separated variants, and the non-existent `/thinking` suffix has been dropped
+  from the `@heavy` tier. Delegations under this preset previously referenced models that
+  could not be resolved. ([#10], fixes [#9])
+- Golden snapshot for the `github-copilot` delegation protocol realigned with the
+  corrected identifiers above.
+
+### Added
+
+- **Continuous integration.** A `Test` workflow runs `npm ci`, the full suite, and
+  `npm run typecheck` on Node 24 for every pull request and every push to `master`.
+- **Automated publishing via npm Trusted Publishing (OIDC).** Pushing a `v*` tag builds
+  and publishes from GitHub Actions with SLSA provenance attestation and no long-lived
+  npm token. Third-party actions are pinned by commit SHA.
+- **`package-lock.json` is now tracked**, making installs reproducible across
+  contributors and CI. It is not included in the published tarball.
+
+### Changed
+
+- README install and configuration instructions corrected and expanded, including how the
+  `tiers.json` cache behaves. ([#7])
+- Development dependencies `vitest` and `@vitest/coverage-v8` upgraded to 4.x. Both are
+  bumped in lockstep because `@vitest/coverage-v8` pins an exact `vitest` peer; Dependabot
+  is now configured to group them. Dev-only — no effect on the published package. ([#8])
+
+[#7]: https://github.com/marco-jardim/opencode-model-router/pull/7
+[#8]: https://github.com/marco-jardim/opencode-model-router/pull/8
+[#9]: https://github.com/marco-jardim/opencode-model-router/issues/9
+[#10]: https://github.com/marco-jardim/opencode-model-router/pull/10
+
 ## [1.3.0]
 
 ### Changed — advisory enforcement is now the default
