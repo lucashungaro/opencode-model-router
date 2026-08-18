@@ -46,6 +46,7 @@ export function stripJsonc(input: string): string {
     if (c === "/" && input[i + 1] === "*") {
       i += 2;
       while (i < n && !(input[i] === "*" && input[i + 1] === "/")) i++;
+      if (i >= n) throw new Error("jsonc: unterminated block comment");
       i += 2; // skip the closing */
       continue;
     }

@@ -45,6 +45,16 @@ describe("parseJsonc", () => {
   it("throws on genuinely invalid JSON", () => {
     expect(() => parseJsonc("{ nope ")).toThrow();
   });
+
+  it("throws on an unterminated block comment after a complete value", () => {
+    expect(() => parseJsonc(`{"a":1} /* never closed`)).toThrow(
+      /unterminated block comment/,
+    );
+  });
+
+  it("still accepts a terminated comment after a complete value", () => {
+    expect(parseJsonc(`{"a":1} /* fine */`)).toEqual({ a: 1 });
+  });
 });
 
 describe("stripJsonc", () => {
