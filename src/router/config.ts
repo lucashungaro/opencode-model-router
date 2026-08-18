@@ -245,6 +245,24 @@ export function validateConfig(raw: unknown): RouterConfig {
     }
   }
 
+  // `activePreset` has to name a preset that actually exists. It is the key most
+  // likely to be typo'd in a hand-edited override file, and without this the bad
+  // name loads clean and routing quietly runs on whatever the state file or the
+  // bundled default left behind, with nothing said. Matching is case-insensitive
+  // to agree with resolvePresetName, which is what `/preset` uses.
+  const activePresetName = obj.activePreset as string;
+  const presetNames = Object.keys(presets);
+  const activeExists =
+    Object.prototype.hasOwnProperty.call(presets, activePresetName) ||
+    presetNames.some(
+      (n) => n.toLowerCase() === activePresetName.trim().toLowerCase(),
+    );
+  if (!activeExists) {
+    throw new Error(
+      `tiers.json: 'activePreset' is '${activePresetName}', which is not a defined preset (defined: ${presetNames.join(", ")})`,
+    );
+  }
+
   if (!Array.isArray(obj.rules)) {
     throw new Error("tiers.json: 'rules' must be an array of strings");
   }

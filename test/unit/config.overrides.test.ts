@@ -133,6 +133,37 @@ describe("loadConfig — user overrides file", () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
+  // activePreset is the likeliest key to typo in a hand-edited file. It used to
+  // load clean and leave routing on whatever the bundled default was, saying
+  // nothing at all.
+  it("warns and drops the layer when activePreset names no known preset", () => {
+    writeOverride(JSON.stringify({ activePreset: "no-such-preset-xyz" }));
+    const cfg = loadConfig();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("no-such-preset-xyz"),
+    );
+    // fell back to the bundled default rather than adopting the bad name
+    expect(cfg.activePreset).not.toBe("no-such-preset-xyz");
+    expect(cfg.presets[cfg.activePreset]).toBeDefined();
+  });
+
+  it("accepts activePreset naming a preset the override itself defines", () => {
+    writeOverride(
+      JSON.stringify({
+        presets: { local: { fast: { model: "local/qwen3" } } },
+        activePreset: "local",
+      }),
+    );
+    expect(loadConfig().activePreset).toBe("local");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("accepts activePreset in a different case, matching /preset resolution", () => {
+    writeOverride(JSON.stringify({ activePreset: "AnThRoPiC" }));
+    expect(loadConfig().presets.anthropic).toBeDefined();
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
   it("deep-merges a single tier model, preserving sibling fields", () => {
     writeOverride(
       JSON.stringify({
