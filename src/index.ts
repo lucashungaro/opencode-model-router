@@ -435,16 +435,26 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
             let producerText = "";
             let forcing: string | null = null;
 
-            while (true) {
-              if (safety++ > safetyMax) {
-                return (
-                  `[router status: unmet] delegation stopped by the safety net after ` +
-                  `${state.totalAttempts} attempt(s).\n\n${scrubText(producerText)}`
-                );
-              }
-              const tier = state.currentTier;
-              const taskText = forcing
-                ? `${scrubText(forcing)}\n\n${args.task}`
+            /**
+             * One turn of the escalation ladder: create a producer session, run
+             * the task on it, put the result through the acceptance gate, then
+             * tear the session down. Returns null when the backend refused to
+             * create a session, the one failure the caller cannot retry.
+             *
+             * Split out because the loop is about when to *stop* — safety net,
+             * attempt accounting, tier advancement — and a ninety-line attempt
+             * in the middle of it obscured both halves.
+             */
+            const runProducerAttempt = async (
+              tier: string,
+              forcingNote: string | null,
+            ): Promise<{
+              sessionID: string;
+              text: string;
+              gateRes: Awaited<ReturnType<typeof accept>>;
+            } | null> => {
+              const taskText = forcingNote
+                ? `${scrubText(forcingNote)}\n\n${args.task}`
                 : args.task;
 
               const created: any = await ctx.client.session.create({
@@ -453,9 +463,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                 },
               });
               const producerSid: string | undefined = created?.data?.id;
-              if (!producerSid) {
-                return "[router] delegate failed: could not create a producer session.";
-              }
+              if (!producerSid) return null;
               producerSessions.push(producerSid);
               // Compose with Layer 1: guard the plugin-created producer session.
               try {
@@ -465,7 +473,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               }
 
               const model = tierModel(activeCfg, tier) ?? undefined;
-              producerText = "";
+              let producerText = "";
               // Provider-failover vs quality-escalation precedence (Phase 3.3):
               // Provider-failover is advisory only — a text chain injected into the orchestrator
               // system prompt (buildFallbackInstructions). It is orthogonal to this runtime ladder.
@@ -529,6 +537,25 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               // Dispose this attempt's backend session before the next iteration
               // so a long ladder never accumulates live sessions.
               await disposeChildSession(producerSid);
+
+              return { sessionID: producerSid, text: producerText, gateRes };
+            };
+
+            while (true) {
+              if (safety++ > safetyMax) {
+                return (
+                  `[router status: unmet] delegation stopped by the safety net after ` +
+                  `${state.totalAttempts} attempt(s).\n\n${scrubText(producerText)}`
+                );
+              }
+              const tier = state.currentTier;
+              const attempt = await runProducerAttempt(tier, forcing);
+              if (!attempt) {
+                return "[router] delegate failed: could not create a producer session.";
+              }
+              producerText = attempt.text;
+              const producerSid = attempt.sessionID;
+              const gateRes = attempt.gateRes;
 
               const costRatio =
                 typeof tiersForCost?.[tier]?.costRatio === "number"
