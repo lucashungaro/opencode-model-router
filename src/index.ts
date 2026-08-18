@@ -28,6 +28,10 @@ import {
   buildOverridesOutput,
   buildRouterHelp,
 } from "./commands/output";
+import {
+  resolveSubagentOverrides,
+  mergeSubagentOverride,
+} from "./router/subagents";
 import { fingerprintToolCall } from "./guard/fingerprint";
 import { detectNarration } from "./guard/narration";
 import {
@@ -926,6 +930,22 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         }
 
         opencodeConfig.agent[name] = agentDef;
+      }
+
+      // Repoint pre-existing subagents listed in `subagentTiers` at the active
+      // preset's models. Opt-in: with no map, nothing here runs and the agent
+      // record is left exactly as opencode built it. Runs after tier
+      // registration so the tier-name collision guard sees the real tiers.
+      const subagentOverrides = resolveSubagentOverrides({
+        subagentTiers: cfg.subagentTiers,
+        tiers: activeTiers,
+        existingAgents: opencodeConfig.agent,
+      });
+      for (const [agentName, override] of Object.entries(subagentOverrides)) {
+        opencodeConfig.agent[agentName] = mergeSubagentOverride(
+          opencodeConfig.agent[agentName],
+          override,
+        );
       }
 
       // Register commands

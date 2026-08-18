@@ -307,3 +307,39 @@ describe("validateConfig — enforcement.guard validation", () => {
     ).not.toThrow();
   });
 });
+
+describe("validateConfig — subagentTiers", () => {
+  it("accepts the key being absent", () => {
+    expect(() => validateConfig(validRaw())).not.toThrow();
+  });
+
+  it("accepts a well-formed map", () => {
+    expect(() =>
+      validateConfig(validRaw({ subagentTiers: { ContextScout: "fast" } })),
+    ).not.toThrow();
+  });
+
+  it("accepts a tier name no preset defines — skipped at resolve time, never fatal", () => {
+    expect(() =>
+      validateConfig(validRaw({ subagentTiers: { ContextScout: "ultra" } })),
+    ).not.toThrow();
+  });
+
+  it("throws when subagentTiers is not an object", () => {
+    expect(() => validateConfig(validRaw({ subagentTiers: "fast" }))).toThrow(
+      "'subagentTiers' must be an object",
+    );
+  });
+
+  it("throws when a value is not a string", () => {
+    expect(() =>
+      validateConfig(validRaw({ subagentTiers: { ContextScout: 1 } })),
+    ).toThrow("subagentTiers.'ContextScout' must be a non-empty tier name");
+  });
+
+  it("throws when a value is an empty string", () => {
+    expect(() =>
+      validateConfig(validRaw({ subagentTiers: { ContextScout: "" } })),
+    ).toThrow("subagentTiers.'ContextScout' must be a non-empty tier name");
+  });
+});
