@@ -2,7 +2,7 @@
 
 > **Use the cheapest model that can do the job. Automatically.**
 
-An [OpenCode](https://opencode.ai) plugin that routes every coding task to the right-priced AI tier — automatically, on every message, with ~210 tokens of overhead.
+An [OpenCode](https://opencode.ai) plugin that routes every coding task to the right-priced AI tier — automatically, on every message, with 2,970–4,540 characters of system-prompt overhead depending on the orchestrator and enforcement mode.
 
 ## Why it's different
 
@@ -12,7 +12,7 @@ Most AI coding tools give you one model for everything. You pay Opus prices to r
 The orchestrator runs on *every* message. Put Sonnet there, not Opus. Sonnet reads a routing protocol and delegates just as well as Opus — at 4x lower cost. Reserve Opus for when it genuinely matters.
 
 **Inject a compressed, LLM-optimized routing protocol.**
-Instead of verbose instructions, the plugin injects ~210 tokens of dense, machine-readable notation the orchestrator understands perfectly. Same routing intelligence as 870 tokens of prose — 75% smaller. Every message, every session.
+Instead of duplicated prose, the plugin injects a dense, machine-readable routing protocol. The protocol itself is 2,970 characters; a Claude orchestrator receives 3,742 characters after its authority prefix (roughly 935–1,040 tokens at 3.6–4.0 characters per token). Every message, every session.
 
 **Match task to tier using a configurable taxonomy.**
 A keyword routing guide (`@fast→search/grep/read`, `@medium→impl/refactor/test`, `@heavy→arch/debug/security`) tells the orchestrator exactly which tier fits each task type. Fully customizable. No ambiguity.
@@ -65,7 +65,7 @@ opencode-model-router injects a **delegation protocol** into the system prompt t
 4. **Never over-qualify** — use the cheapest tier that can reliably handle the task
 5. **Fallback** across providers when one fails
 
-All of this adds ~210 tokens of system prompt overhead per message.
+All of this adds 2,970 characters for a non-Claude orchestrator or 3,742 characters for a Claude orchestrator (roughly 740–1,040 tokens at 3.6–4.0 characters per token).
 
 ## Cost simulation
 
@@ -114,7 +114,7 @@ Task distribution: 18 exploration (60%), 10 implementation (33%), 2 architecture
 
 ## How it works
 
-On every message, the plugin injects ~210 tokens into the system prompt. The notation is intentionally dense and compressed — it's **optimized for LLM comprehension, not human readability**. An agent reads it as a precise routing grammar; a human might squint at it. That's by design: verbose prose would cost 4x more tokens per message with no routing benefit.
+On every message, the plugin injects a 2,970-character routing protocol. A Claude orchestrator receives 3,742 characters after its authority prefix (roughly 935–1,040 tokens at 3.6–4.0 characters per token). The notation is intentionally dense and compressed — it's **optimized for LLM comprehension, not human readability**. An agent reads it as a precise routing grammar; a human might squint at it.
 
 What the orchestrator sees (Anthropic preset, normal mode):
 
@@ -166,7 +166,7 @@ With router → split:
 | Cross-provider fallback | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Cost ratio awareness | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Plan annotation with tiers | ✅ | ❌ | ❌ | ❌ | ❌ |
-| ~210 token overhead | ✅ | — | ❌ | ❌ | ❌ |
+| Measured prompt overhead: 2,970–4,540 chars | ✅ | — | ❌ | ❌ | ❌ |
 
 **Claude native**: single model for everything, no cost routing. If you're using claude.ai or OpenCode without plugins, you're paying the same price for `grep` as for architecture design.
 
@@ -530,7 +530,7 @@ No configuration is needed — the prefixes are always applied for Claude-backed
 
 Some Claude models (historically, thinking-enabled Sonnet with the `max` variant) can produce progress narration instead of actual work, phrasings like *"Still writing the X function..."*, *"Now I'll implement Y..."*, *"Let me add Z..."*, without the X/Y/Z ever appearing.
 
-This guardrail is **off by default**. It costs ~162 tokens per Claude dispatch (the prompt clause) and its detector false-positives on normal productive phrasing like "Now I'll add the test" when the test does follow, so it is opt-in. Enable it only if you actually observe narration-without-production on your models:
+This guardrail is **off by default**. On the Claude orchestrator path, enabling it adds 650 characters per message (roughly 160–180 tokens at 3.6–4.0 characters per token), and its detector false-positives on normal productive phrasing like "Now I'll add the test" when the test does follow, so it is opt-in. Enable it only if you actually observe narration-without-production on your models:
 
 ```jsonc
 { "antiNarration": true }
@@ -595,7 +595,7 @@ Defines provider fallback order when a delegated task fails:
 
 ## Delegation enforcement (advisory by default)
 
-The read-only cap banners described above are advisory: a well-behaved subagent will respect them, but nothing prevents a model from making one more read after the `[⚠ CAP REACHED]` banner. The **enforcement layer** turns delegation into a produce → verify → accept/escalate loop with independent acceptance and quality escalation. As of v1.3.0 it runs in **`advisory` mode by default**: every non-trivial delegation is verified and any miss surfaces a forcing-note, but nothing is ever hard-blocked (the orchestrator system prompt grows by ~200 tokens for the DoD/acceptance section, and subagents may receive non-blocking guard banners). Set `"mode": "off"` — or run `/router enforce off` — to restore byte-for-byte-unchanged routing with zero added prompt tokens and zero new latency. Hard-blocks only activate in `"mode": "enforced"`.
+The read-only cap banners described above are advisory: a well-behaved subagent will respect them, but nothing prevents a model from making one more read after the `[⚠ CAP REACHED]` banner. The **enforcement layer** turns delegation into a produce → verify → accept/escalate loop with independent acceptance and quality escalation. As of v1.3.0 it runs in **`advisory` mode by default**: every non-trivial delegation is verified and any miss surfaces a forcing-note, but nothing is ever hard-blocked (the DoD/acceptance section adds 798 characters to the orchestrator system prompt, roughly 200–220 tokens at 3.6–4.0 characters per token, and subagents may receive non-blocking guard banners). Set `"mode": "off"` — or run `/router enforce off` — to restore byte-for-byte-unchanged routing with zero added prompt tokens and zero new latency. Hard-blocks only activate in `"mode": "enforced"`.
 
 ### The three enforcement layers
 
@@ -665,18 +665,17 @@ After `/annotate-plan`:
 
 ## Token overhead
 
-The system prompt injection is ~210 tokens per message — roughly the same as v1.0 (before cost-aware features were added). Dense notation keeps overhead flat while adding full routing intelligence.
+Measured with the bundled Anthropic preset in normal mode, the routing protocol is 2,970 characters for a non-Claude orchestrator. A Claude orchestrator receives 3,742 characters after its authority prefix, or 4,540 characters when the 798-character DoD/enforcement section is enabled. That is roughly 740–1,260 tokens across the three paths at 3.6–4.0 characters per token. The optional anti-narration clause adds another 650 characters to the Claude path.
 
-| Version | Tokens | Features |
-|---------|--------|----------|
-| v1.0.7 | ~208 | Basic tier routing |
-| v1.1.0 | ~870 | All features, verbose format |
-| v1.1.1+ | ~210 | All features, compressed format |
+| Version | Measured overhead | Features |
+|---------|-------------------|----------|
+| Before v1.4.0 | Earlier README token estimates were not measured and were inaccurate | Routing, caps, and enforcement evolved across releases |
+| v1.4.0 | 2,970–4,540 chars (~740–1,260 tokens at 3.6–4.0 chars/token) | Trimmed protocol; path-dependent Claude and enforcement prefixes |
 
 ## Requirements
 
 - [OpenCode](https://opencode.ai) v1.0 or later
-- Node.js 18+
+- Node.js 20+
 - Provider API keys configured in OpenCode
 
 ## License

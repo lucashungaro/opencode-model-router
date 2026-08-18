@@ -5,6 +5,45 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-18
+
+Minor release: session lifecycle fixes, more reliable read-only delegation, and a
+smaller routing protocol with measured overhead documentation.
+
+### Fixed
+
+- **Grader and producer child sessions are now parented and disposed.** The plugin
+  previously created backend sessions for every grader and producer attempt but never
+  aborted or deleted them, including on the happy path, leaving orphaned top-level
+  sessions in the TUI. ([`40c9b94`])
+- **Layer-2 grading now skips read-only research delegations** when the DoD is inferred,
+  checker-only, and no files changed. This prevents false "not accepted" notes on
+  legitimate research results. Contributed by Lucas Húngaro. ([#20])
+- README prompt-overhead figures now use measured character counts and explicit token
+  estimate ranges. The previous `~210 tokens` claim understated the former default
+  Claude path by roughly eight to nine times.
+
+### Added
+
+- A drift test now pins the acceptance-check grammar shared by the `/annotate-plan`
+  template, `parseAcceptanceBlock`, and the delegation protocol. ([`19171ea`])
+
+### Changed
+
+- **The delegation protocol was rewritten without dropping routing rules.** On the
+  default Claude path it is 46.6% smaller, from 7,006 to 3,742 characters. Contributed
+  by Lucas Húngaro. ([#21])
+- **The anti-narration guardrail is now opt-in.** Set the top-level `antiNarration`
+  boolean to `true` to restore the prompt clause and detector; the default is `false`.
+  ([#21])
+- The package now declares Node.js 20 or later through `engines.node`. ([`6fa9bab`])
+
+[`19171ea`]: https://github.com/marco-jardim/opencode-model-router/commit/19171ea
+[`40c9b94`]: https://github.com/marco-jardim/opencode-model-router/commit/40c9b94
+[`6fa9bab`]: https://github.com/marco-jardim/opencode-model-router/commit/6fa9bab
+[#20]: https://github.com/marco-jardim/opencode-model-router/pull/20
+[#21]: https://github.com/marco-jardim/opencode-model-router/pull/21
+
 ## [1.3.1] - 2026-08-16
 
 Patch release: bug fixes, documentation, and release-engineering only. No runtime
