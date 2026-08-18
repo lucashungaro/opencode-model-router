@@ -99,6 +99,9 @@ describe("validateConfig — tier shape", () => {
   it("throws when tier.whenToUse is not an array", () => {
     expect(() => validateConfig(withTier({ model: "m", description: "d", whenToUse: "x" }))).toThrow(/whenToUse/);
   });
+  it("accepts a tier with only `model` (description/whenToUse optional)", () => {
+    expect(() => validateConfig(withTier({ model: "provider/m" }))).not.toThrow();
+  });
 });
 
 describe("validateConfig — modes block", () => {

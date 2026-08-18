@@ -241,9 +241,72 @@ In `~/.config/opencode/opencode.json`:
 
 ## Configuration
 
-All configuration lives in `tiers.json` at the plugin root, which is located inside the cached package directory in your home folder (e.g. `~/.cache/opencode/packages/opencode-model-router@latest/node_modules/opencode-model-router/tiers.json`).
+The full default configuration lives in `tiers.json` at the plugin root. There are two ways to customize it.
 
-> ⚠️ **IMPORTANT**: You **must** edit this cached version of `tiers.json` for opencode to respect your changes and custom model configurations.
+### Recommended: overrides files (survive updates)
+
+Anything in an overrides file is **deep-merged** over the bundled `tiers.json` on load — you only specify the keys you want to change; everything else falls back to the defaults. These files live outside the cache dir, so they are **not** wiped when the plugin updates. They're `.jsonc`, so `//` and `/* */` comments and trailing commas are allowed.
+
+There are two layers, applied lowest→highest priority:
+
+| Layer | Path | Scope |
+|-------|------|-------|
+| **Global** | `~/.config/opencode/opencode-model-router.overrides.jsonc` | Your personal defaults across all projects |
+| **Project** | `<project>/.opencode/opencode-model-router.overrides.jsonc` | Per-project; commit it to share one routing config with your team |
+
+The project file deep-merges over (and wins against) the global file, which in turn merges over the bundled defaults. So you can keep personal preferences globally while a committed project file unifies routing for everyone on the repo. The project file is found by searching upward from the working directory to the repo root (the nearest ancestor containing `.git`), so it is picked up even when you launch opencode from a subdirectory.
+
+```json
+{
+  "presets": {
+    "github-copilot": {
+      "heavy": { "model": "github-copilot/claude-opus-4.8", "variant": "high" }
+    }
+  }
+}
+```
+
+The example above changes only the `@heavy` model/variant for the `github-copilot` preset; every other tier, preset, and setting keeps its bundled value. You can also override `costRatio`, `tierCaps`, `rules`, `modes`, `enforcement`, add an entirely new preset, etc. — any top-level key from `tiers.json`.
+
+Run `/router overrides` to see both file paths, whether each exists, and the precedence order.
+
+Merge semantics: objects merge recursively; arrays and scalars are replaced wholesale (so an overridden `rules`/`whenToUse` list *replaces* the default, it does not append). If a file is missing, malformed, or produces an invalid config, the plugin logs a `[model-router]` warning and drops just that layer (keeping the others) — a typo in one file can never break startup or discard a valid file.
+
+#### Defining a whole new preset
+
+An overrides file can add a brand-new preset, not just tweak the bundled ones. `model` is the only required field per tier. `costRatio` and `steps` are optional — when omitted they fall back to the conventional **`1` / `5` / `20`** and **`30` / `50` / `120`** (by tier name, the same values the bundled presets use); `description`/`whenToUse` are display-only.
+
+```jsonc
+{
+  "presets": {
+    "openrouter": {
+      "fast":   { "model": "openrouter/deepseek/deepseek-v3.2" },
+      "medium": { "model": "openrouter/qwen/qwen3-coder", "costRatio": 3, "steps": 60 },
+      "heavy":  { "model": "openrouter/google/gemini-3-pro", "costRatio": 9, "steps": 140 },
+    },
+  },
+  // make it the active preset (or switch at runtime with `/preset openrouter`)
+  "activePreset": "openrouter",
+}
+```
+
+`@fast` omits `costRatio`/`steps`, so it gets the defaults (`1` / `30`); `@medium` and `@heavy` set their own to match their real economics. **Set `costRatio` whenever your models' relative costs differ from the default ladder** — it's the price signal the orchestrator uses to pick the cheapest adequate tier. (Routing by *task type* — `@fast`=read-only, `@medium`=implementation, `@heavy`=architecture — comes from the shared `taskPatterns`/`rules`, so it works for any preset automatically.)
+
+The effective values, including any defaults, are shown by `/tiers`.
+
+Restart opencode after adding a new preset so its tier subagents get registered. (Each model's provider must itself be configured in your `opencode.json`.)
+
+> **`activePreset` / `activeMode` / `enforcement.mode` in an override file are _defaults_.** Runtime selections — `/preset`, `/budget`, `/router enforce` — are persisted to the state file (`~/.config/opencode/opencode-model-router.state.json`), which is applied **after** the override files and therefore wins. So the override's `activePreset` takes effect until you switch at runtime; if it ever "isn't taking", it's because a past `/preset` left a value in the state file — run `/preset <name>` again or delete that file. (The state file is machine-written, so the plugin never rewrites your hand-authored, commented override file.)
+
+### Advanced: edit the bundled `tiers.json` directly
+
+For an npm install, `tiers.json` is **inside the cached package directory**, not your `~/.config/opencode/` folder — typically:
+
+```
+~/.cache/opencode/packages/opencode-model-router@latest/node_modules/opencode-model-router/tiers.json
+```
+
+> ⚠️ Editing a copy elsewhere (e.g. under your global `npm` `node_modules`) has no effect, and this cached file is **overwritten on each plugin update**. Prefer the overrides file above unless you are developing the plugin from a local clone.
 
 ### Presets
 
@@ -640,6 +703,9 @@ Advisory is the default. To change the level:
 | `/budget` | Show available modes and which is active |
 | `/budget <mode>` | Switch routing mode (`normal`, `budget`, `quality`, `deep`) |
 | `/annotate-plan [path]` | Annotate a plan file with `[tier:X]` tags for each step |
+| `/router overrides` | Show the global + project override file paths and merge precedence |
+| `/router enforce <off\|advisory\|enforced>` | Set delegation-enforcement mode (persisted) |
+| `/bypass [on\|off]` | Toggle the router off/on for the session |
 
 ## Plan annotation
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import ModelRouterPlugin from "../../src/index";
 import { resolveEnforcementMode } from "../../src/router/enforcement";
 import { loadConfig, invalidateConfigCache } from "../../src/router/config";
@@ -77,5 +77,42 @@ describe("router-command integration", () => {
     const out = { parts: [] as any[] };
     await hooks["command.execute.before"]({ command: "router", arguments: "" }, out);
     expect(out.parts[0].text).toContain("Enforcement:");
+    expect(out.parts[0].text).toContain("/router overrides");
+  });
+
+  it("overrides shows both layer paths + precedence", async () => {
+    const out = { parts: [] as any[] };
+    await hooks["command.execute.before"]({ command: "router", arguments: "overrides" }, out);
+    const text = out.parts[0].text;
+    expect(text).toContain("config overrides");
+    expect(text).toContain("opencode-model-router.overrides.jsonc"); // global path
+    expect(text).toContain(".opencode"); // project path
+    expect(text).toContain("Active preset");
+  });
+  // A preset defined in an overrides file may carry only `model` per tier. The
+  // /tiers renderer used to assume description/whenToUse were always present, so
+  // a minimal preset crashed the command on `tier.whenToUse.join(...)`.
+  it("renders a model-only override preset without crashing", async () => {
+    const overrides = join(
+      testHomeDir,
+      ".config/opencode/opencode-model-router.overrides.jsonc",
+    );
+    mkdirSync(dirname(overrides), { recursive: true });
+    writeFileSync(
+      overrides,
+      JSON.stringify({
+        presets: { local: { fast: { model: "local/qwen3" } } },
+        activePreset: "local",
+      }),
+      "utf-8",
+    );
+    invalidateConfigCache();
+    hooks = await ModelRouterPlugin({} as any);
+
+    const out = { parts: [] as any[] };
+    await hooks["command.execute.before"]({ command: "tiers", arguments: "" }, out);
+    const text = out.parts[0].text;
+    expect(text).toContain("local/qwen3");
+    expect(text).not.toContain("undefined");
   });
 });

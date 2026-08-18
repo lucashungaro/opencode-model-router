@@ -2,6 +2,14 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseJsonc } from "./jsonc";
+
+/**
+ * Filename of the optional user overrides file (global and project copies share
+ * it). `.jsonc` so comments and trailing commas are allowed; mirrors the
+ * `opencode-model-router.*` prefix of the state file.
+ */
+export const OVERRIDE_FILENAME = "opencode-model-router.overrides.jsonc";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,10 +31,12 @@ export interface TierConfig {
   reasoning?: ReasoningConfig;
   costRatio?: number;
   color?: string;
-  description: string;
+  /** Optional human-readable blurb shown in `/tiers` and the agent registration. */
+  description?: string;
   steps?: number;
   prompt?: string;
-  whenToUse: string[];
+  /** Optional use-case hints shown in `/tiers`. */
+  whenToUse?: string[];
 }
 
 export type Preset = Record<string, TierConfig>;
@@ -105,6 +115,53 @@ export function configPath(): string {
   return join(getPluginRoot(), "tiers.json");
 }
 
+/**
+ * Path to the global user overrides file. Lives in the stable opencode config
+ * dir (next to the state file) so it survives plugin updates — unlike the
+ * bundled tiers.json, which sits in the cache dir and is overwritten on every
+ * update. Anything here is deep-merged over the bundled config.
+ */
+export function overridePath(): string {
+  return join(homedir(), ".config", "opencode", OVERRIDE_FILENAME);
+}
+
+/**
+ * Default location of the project-local overrides file
+ * (`.opencode/opencode-model-router.overrides.jsonc` in the current working
+ * directory). This is the path to *create* the file at; the actual lookup walks
+ * upward — see {@link findProjectOverride}. Used for display when no project
+ * file is found.
+ *
+ * The project file is deep-merged *after* (and therefore wins over) the global
+ * overrides file, so a team can commit a shared file that unifies routing for
+ * the project on top of each member's personal global file.
+ */
+export function localOverridePath(): string {
+  return join(process.cwd(), ".opencode", OVERRIDE_FILENAME);
+}
+
+/**
+ * Locate the project-local overrides file by walking upward from the current
+ * working directory, so the project config is found even when opencode is
+ * launched from a subdirectory. The walk is bounded by the project root: it
+ * stops at the first ancestor containing a `.git` entry (after checking that
+ * ancestor) or at the filesystem root, whichever comes first — so it never
+ * escapes the repo into unrelated parent directories. Returns the resolved
+ * path, or undefined when no file exists within the project.
+ */
+export function findProjectOverride(): string | undefined {
+  let dir = process.cwd();
+  for (;;) {
+    const candidate = join(dir, ".opencode", OVERRIDE_FILENAME);
+    if (existsSync(candidate)) return candidate;
+    // Reached the project root without finding the file — stop here.
+    if (existsSync(join(dir, ".git"))) return undefined;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined; // filesystem root
+    dir = parent;
+  }
+}
+
 export function statePath(): string {
   return join(
     homedir(),
@@ -167,22 +224,43 @@ export function validateConfig(raw: unknown): RouterConfig {
         );
       }
       const t = tier as Record<string, unknown>;
+      // `model` is the only required tier field — so an overrides file can define
+      // a new preset/tier with just `{ "model": "..." }`. The rest are optional
+      // and only type-checked when present.
       if (typeof t.model !== "string" || !t.model) {
         throw new Error(
           `tiers.json: '${presetName}.${tierName}.model' must be a non-empty string`,
         );
       }
-      if (typeof t.description !== "string") {
+      if (t.description !== undefined && typeof t.description !== "string") {
         throw new Error(
           `tiers.json: '${presetName}.${tierName}.description' must be a string`,
         );
       }
-      if (!Array.isArray(t.whenToUse)) {
+      if (t.whenToUse !== undefined && !Array.isArray(t.whenToUse)) {
         throw new Error(
           `tiers.json: '${presetName}.${tierName}.whenToUse' must be an array`,
         );
       }
     }
+  }
+
+  // `activePreset` has to name a preset that actually exists. It is the key most
+  // likely to be typo'd in a hand-edited override file, and without this the bad
+  // name loads clean and routing quietly runs on whatever the state file or the
+  // bundled default left behind, with nothing said. Matching is case-insensitive
+  // to agree with resolvePresetName, which is what `/preset` uses.
+  const activePresetName = obj.activePreset as string;
+  const presetNames = Object.keys(presets);
+  const activeExists =
+    Object.prototype.hasOwnProperty.call(presets, activePresetName) ||
+    presetNames.some(
+      (n) => n.toLowerCase() === activePresetName.trim().toLowerCase(),
+    );
+  if (!activeExists) {
+    throw new Error(
+      `tiers.json: 'activePreset' is '${activePresetName}', which is not a defined preset (defined: ${presetNames.join(", ")})`,
+    );
   }
 
   if (!Array.isArray(obj.rules)) {
@@ -418,13 +496,169 @@ export function validateConfig(raw: unknown): RouterConfig {
   return raw as RouterConfig;
 }
 
+/**
+ * Recursively merge `override` onto `base`. Plain objects merge key-by-key;
+ * arrays and scalars are replaced wholesale (so e.g. an overridden `rules` or
+ * `whenToUse` list replaces rather than appends). `undefined` values in the
+ * override are skipped so they never blow away a base value.
+ */
+export function deepMerge(base: unknown, override: unknown): unknown {
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+
+  if (!isPlainObject(base) || !isPlainObject(override)) {
+    return override;
+  }
+
+  const result: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined) continue;
+    // `__proto__` from a parsed override would replace the merged object's own
+    // prototype rather than becoming a key. Whoever writes the config file can
+    // already do worse, so this is tidiness rather than a boundary, but a merge
+    // helper should not be the thing that reparents an object.
+    if (key === "__proto__" || key === "constructor") continue;
+    result[key] =
+      key in result && isPlainObject(result[key]) && isPlainObject(value)
+        ? deepMerge(result[key], value)
+        : value;
+  }
+  return result;
+}
+
+/**
+ * Read and parse the optional user overrides file. Returns the parsed object,
+ * or undefined when the file is absent/unreadable/invalid. Parse and shape
+ * errors are surfaced via console.warn (never thrown) so a typo in the
+ * overrides file can never brick opencode startup — but the user still gets a
+ * visible reason why their override was ignored.
+ */
+function readOverridesAt(op: string): Record<string, unknown> | undefined {
+  let text: string;
+  try {
+    if (!existsSync(op)) return undefined;
+    text = readFileSync(op, "utf-8");
+  } catch (err) {
+    // The file is there but unreadable (permissions, a dangling symlink, a
+    // race with a delete). Every other failure below says so; staying silent
+    // here makes an unreadable override look exactly like an absent one.
+    console.warn(
+      `[model-router] ignoring ${op}: cannot read it — ${(err as Error).message}`,
+    );
+    return undefined;
+  }
+
+  try {
+    const parsed = parseJsonc(text) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      console.warn(
+        `[model-router] ignoring ${op}: expected a JSON object at root`,
+      );
+      return undefined;
+    }
+    return parsed as Record<string, unknown>;
+  } catch (err) {
+    console.warn(
+      `[model-router] ignoring ${op}: invalid JSONC — ${(err as Error).message}`,
+    );
+    return undefined;
+  }
+}
+
+/**
+ * The ordered override layers (lowest priority first): global, then
+ * project-local. Each present, well-formed file becomes a layer that is
+ * deep-merged over the ones before it.
+ */
+export interface OverrideLayer {
+  path: string;
+  data: Record<string, unknown>;
+}
+
+function collectOverrideLayers(): OverrideLayer[] {
+  const layers: OverrideLayer[] = [];
+  // Lowest priority first: global, then project-local (found by upward search).
+  const paths = [overridePath(), findProjectOverride()];
+  for (const p of paths) {
+    if (!p) continue;
+    const data = readOverridesAt(p);
+    if (data) layers.push({ path: p, data });
+  }
+  return layers;
+}
+
+/**
+ * Canonical per-tier defaults, keyed by the conventional tier names. These are
+ * the same values every bundled preset uses, so a preset defined in an overrides
+ * file with only `model` per tier gets a sensible cost ladder and turn budgets.
+ */
+const TIER_DEFAULTS: Record<string, { costRatio: number; steps: number }> = {
+  fast: { costRatio: 1, steps: 30 },
+  medium: { costRatio: 5, steps: 50 },
+  heavy: { costRatio: 20, steps: 120 },
+};
+const FALLBACK_TIER_DEFAULTS = { costRatio: 1, steps: 50 };
+
+/**
+ * Fill in `costRatio`/`steps` for any tier that omits them, by tier name. Runs
+ * after merge so override-defined presets behave well without restating the
+ * conventional values; the effective numbers then show up in `/tiers` and the
+ * injected protocol. Bundled presets already set both, so this is a no-op there.
+ */
+function applyTierDefaults(cfg: RouterConfig): void {
+  for (const preset of Object.values(cfg.presets)) {
+    for (const [tierName, tier] of Object.entries(preset)) {
+      const d = TIER_DEFAULTS[tierName] ?? FALLBACK_TIER_DEFAULTS;
+      if (tier.costRatio === undefined) tier.costRatio = d.costRatio;
+      if (tier.steps === undefined) tier.steps = d.steps;
+    }
+  }
+}
+
 export function loadConfig(): RouterConfig {
   if (_cachedConfig && !_configDirty) {
     return _cachedConfig;
   }
 
-  const raw = JSON.parse(readFileSync(configPath(), "utf-8"));
-  const cfg = validateConfig(raw);
+  const base = JSON.parse(readFileSync(configPath(), "utf-8"));
+  const layers = collectOverrideLayers();
+
+  // Bundled config must be valid on its own — throw otherwise (unchanged
+  // behaviour). Override layers are then applied on top.
+  let cfg = validateConfig(base);
+
+  if (layers.length > 0) {
+    const merge = (ls: OverrideLayer[]): unknown =>
+      ls.reduce<unknown>((acc, l) => deepMerge(acc, l.data), base);
+
+    try {
+      cfg = validateConfig(merge(layers));
+    } catch (err) {
+      // A bad override must never brick startup, and one broken file must not
+      // discard a good one. Fall back to the highest-priority layer that
+      // validates on its own (so a broken personal/global file still lets a
+      // shared project file apply), else the bundled defaults.
+      console.warn(
+        `[model-router] combined overrides are invalid (${(err as Error).message}); dropping conflicting layer(s)`,
+      );
+      for (let i = layers.length - 1; i >= 0; i--) {
+        try {
+          cfg = validateConfig(merge([layers[i]!]));
+          for (let j = 0; j < layers.length; j++) {
+            if (j !== i) {
+              console.warn(`[model-router] dropped override layer ${layers[j]!.path}`);
+            }
+          }
+          break;
+        } catch (singleErr) {
+          console.warn(
+            `[model-router] ignoring ${layers[i]!.path}: ${(singleErr as Error).message}`,
+          );
+          cfg = validateConfig(base);
+        }
+      }
+    }
+  }
 
   try {
     if (existsSync(statePath())) {
@@ -447,6 +681,8 @@ export function loadConfig(): RouterConfig {
   } catch {
     // Ignore state read errors and keep tiers.json defaults
   }
+
+  applyTierDefaults(cfg);
 
   _cachedConfig = cfg;
   _configDirty = false;
