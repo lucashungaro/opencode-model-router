@@ -22,6 +22,12 @@ export interface GraderRequest {
   tier: string;
   system: string;
   prompt: string;
+  /**
+   * Producer working directory. When present, the grader session MUST be scoped
+   * to this directory so any file-existence / command claims the grader verifies
+   * are checked against the producer's cwd, not the grader's own session cwd.
+   */
+  cwd?: string;
 }
 
 export interface GraderResult {
@@ -45,6 +51,8 @@ export interface CheckerInput {
   artefact: ArtefactView;
   producerTier: string;
   producerSessionID: string;
+  /** Effective producer working directory; scopes the grader + informs its prompt. */
+  workingDir?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +86,13 @@ const GRADER_SYSTEM =
 
 export function buildGradingPrompt(input: CheckerInput): { system: string; prompt: string } {
   const lines: string[] = [];
+
+  if (input.workingDir) {
+    lines.push(
+      `Producer working directory: ${input.workingDir}. Any file-existence or command claims MUST be verified against THIS directory, not your own session directory.`,
+    );
+    lines.push("");
+  }
 
   lines.push("## Acceptance criteria (ALL must be satisfied)");
   for (let i = 0; i < input.criteria.length; i++) {
@@ -181,7 +196,12 @@ export async function runChecker(input: CheckerInput, deps: CheckerDeps): Promis
   // 4. Dispatch grader
   let res: GraderResult;
   try {
-    res = await deps.dispatchGrader({ tier: graderTier, system, prompt });
+    res = await deps.dispatchGrader({
+      tier: graderTier,
+      system,
+      prompt,
+      ...(input.workingDir ? { cwd: input.workingDir } : {}),
+    });
   } catch (err) {
     return {
       pass: false,

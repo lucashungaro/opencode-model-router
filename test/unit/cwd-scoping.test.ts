@@ -12,6 +12,8 @@ import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveBaseDir, resolveAgainst } from "../../src/verify/paths";
 import { runDeterministic } from "../../src/verify/deterministic";
+import { runChecker, buildGradingPrompt } from "../../src/verify/checker";
+import type { CheckerDeps, CheckerInput, GraderRequest } from "../../src/verify/checker";
 import type { DeterministicDeps } from "../../src/verify/types";
 import type { DoD } from "../../src/verify/dod";
 
@@ -239,5 +241,61 @@ describe("runDeterministic — external cwd resolution", () => {
     );
     expect(verdict.pass).toBe(true);
     expect(seen).toEqual([join(externalCwd, "target.json")]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checker forwards the producer working directory to the grader
+// ---------------------------------------------------------------------------
+
+function checkerInput(workingDir?: string): CheckerInput {
+  return {
+    criteria: ["ships a thing"],
+    artefact: { finalReturnText: "done", changedFiles: [], declaredOutputs: [] },
+    producerTier: "fast",
+    producerSessionID: "producer-sess",
+    ...(workingDir ? { workingDir } : {}),
+  };
+}
+
+describe("runChecker — workingDir forwarding", () => {
+  function capturingDeps(seen: GraderRequest[]): CheckerDeps {
+    return {
+      dispatchGrader: async (req) => {
+        seen.push(req);
+        return { sessionID: "grader-sess", text: JSON.stringify({ pass: true, reasons: [] }) };
+      },
+      ladder: ["fast", "medium", "heavy"],
+    };
+  }
+
+  it("forwards workingDir as GraderRequest.cwd when set", async () => {
+    const producerDir = join(tmpdir(), "producer-ext");
+    const seen: GraderRequest[] = [];
+    const verdict = await runChecker(checkerInput(producerDir), capturingDeps(seen));
+    expect(verdict.pass).toBe(true);
+    expect(seen[0]?.cwd).toBe(producerDir);
+  });
+
+  it("omits cwd entirely when workingDir is absent (byte-identical request)", async () => {
+    const seen: GraderRequest[] = [];
+    const verdict = await runChecker(checkerInput(), capturingDeps(seen));
+    expect(verdict.pass).toBe(true);
+    expect(seen[0] && "cwd" in seen[0]).toBe(false);
+  });
+});
+
+describe("buildGradingPrompt — working-directory line", () => {
+  it("prepends the producer working directory when set", () => {
+    const producerDir = join(tmpdir(), "producer-ext");
+    const { prompt } = buildGradingPrompt(checkerInput(producerDir));
+    expect(prompt.startsWith(`Producer working directory: ${producerDir}.`)).toBe(true);
+    expect(prompt).toContain("not your own session directory");
+  });
+
+  it("emits a byte-identical prompt when workingDir is absent", () => {
+    const { prompt } = buildGradingPrompt(checkerInput());
+    expect(prompt.startsWith("## Acceptance criteria")).toBe(true);
+    expect(prompt).not.toContain("Producer working directory");
   });
 });
