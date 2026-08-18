@@ -11,6 +11,9 @@ import { describe, it, expect } from "vitest";
 import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveBaseDir, resolveAgainst } from "../../src/verify/paths";
+import { runDeterministic } from "../../src/verify/deterministic";
+import type { DeterministicDeps } from "../../src/verify/types";
+import type { DoD } from "../../src/verify/dod";
 
 const isWin = process.platform === "win32";
 
@@ -114,5 +117,127 @@ describe("resolveAgainst", () => {
     const escaped = resolveAgainst(base, join("..", "x"));
     expect(escaped).toBe(join(base, "..", "x"));
     expect(escaped.startsWith(base)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runDeterministic honors deps.cwd (effective base dir)
+// ---------------------------------------------------------------------------
+
+function fileExistsDoD(path = "out.txt"): DoD {
+  return {
+    kind: "deterministic",
+    checks: [{ kind: "fileExists", path }],
+    criteria: [],
+    deliverable: null,
+    source: "explicit",
+  };
+}
+
+function schemaMatchDoD(path: string, schema: string): DoD {
+  return {
+    kind: "deterministic",
+    checks: [{ kind: "schemaMatch", path, schema }],
+    criteria: [],
+    deliverable: null,
+    source: "explicit",
+  };
+}
+
+describe("runDeterministic — external cwd resolution", () => {
+  it("resolves a relative fileExists path against deps.cwd (external dir) and passes", async () => {
+    const externalCwd = join(tmpdir(), "producer-ext");
+    let seenPath = "";
+    const deps: DeterministicDeps = {
+      exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+      fs: {
+        fileExists: async (p) => {
+          seenPath = p;
+          // File lives under the external cwd, NOT the router's own dir.
+          return p.startsWith(externalCwd);
+        },
+        readFile: async () => "{}",
+      },
+      cwd: externalCwd,
+    };
+    const verdict = await runDeterministic(fileExistsDoD("out.txt"), deps);
+    expect(verdict.pass).toBe(true);
+    expect(seenPath).toBe(join(externalCwd, "out.txt"));
+  });
+
+  it("leaves an absolute fileExists path unscoped by deps.cwd", async () => {
+    const externalCwd = join(tmpdir(), "producer-ext");
+    const abs = join(tmpdir(), "elsewhere", "out.txt");
+    let seenPath = "";
+    const deps: DeterministicDeps = {
+      exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+      fs: {
+        fileExists: async (p) => {
+          seenPath = p;
+          return true;
+        },
+        readFile: async () => "{}",
+      },
+      cwd: externalCwd,
+    };
+    const verdict = await runDeterministic(fileExistsDoD(abs), deps);
+    expect(verdict.pass).toBe(true);
+    expect(seenPath).toBe(abs);
+  });
+
+  it("emits an honest, cwd-scoped reason when the file is missing", async () => {
+    const externalCwd = join(tmpdir(), "producer-ext");
+    const deps: DeterministicDeps = {
+      exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+      fs: { fileExists: async () => false, readFile: async () => "{}" },
+      cwd: externalCwd,
+    };
+    const verdict = await runDeterministic(fileExistsDoD("out.txt"), deps);
+    expect(verdict.pass).toBe(false);
+    expect(verdict.reasons[0]).toContain("file not found");
+    expect(verdict.reasons[0]).toContain(externalCwd);
+  });
+
+  it("resolves BOTH schemaMatch paths (target + schema file) against deps.cwd", async () => {
+    const externalCwd = join(tmpdir(), "producer-ext");
+    const seen: string[] = [];
+    const target = JSON.stringify({ name: "foo" });
+    const schema = JSON.stringify({ name: "" });
+    const deps: DeterministicDeps = {
+      exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+      fs: {
+        fileExists: async () => true,
+        readFile: async (p) => {
+          seen.push(p);
+          return p.endsWith("target.json") ? target : schema;
+        },
+      },
+      cwd: externalCwd,
+    };
+    const verdict = await runDeterministic(schemaMatchDoD("target.json", "schema.json"), deps);
+    expect(verdict.pass).toBe(true);
+    expect(seen).toEqual([join(externalCwd, "target.json"), join(externalCwd, "schema.json")]);
+  });
+
+  it("does not resolve an inline schema literal as a path", async () => {
+    const externalCwd = join(tmpdir(), "producer-ext");
+    const seen: string[] = [];
+    const deps: DeterministicDeps = {
+      exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+      fs: {
+        fileExists: async () => true,
+        readFile: async (p) => {
+          seen.push(p);
+          return JSON.stringify({ name: "bar" });
+        },
+      },
+      cwd: externalCwd,
+    };
+    const verdict = await runDeterministic(
+      schemaMatchDoD("target.json", JSON.stringify({ name: "" })),
+      deps,
+    );
+    expect(verdict.pass).toBe(true);
+    expect(seen).toEqual([join(externalCwd, "target.json")]);
   });
 });
