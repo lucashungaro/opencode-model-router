@@ -513,6 +513,11 @@ export function deepMerge(base: unknown, override: unknown): unknown {
   const result: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(override)) {
     if (value === undefined) continue;
+    // `__proto__` from a parsed override would replace the merged object's own
+    // prototype rather than becoming a key. Whoever writes the config file can
+    // already do worse, so this is tidiness rather than a boundary, but a merge
+    // helper should not be the thing that reparents an object.
+    if (key === "__proto__" || key === "constructor") continue;
     result[key] =
       key in result && isPlainObject(result[key]) && isPlainObject(value)
         ? deepMerge(result[key], value)
@@ -533,7 +538,13 @@ function readOverridesAt(op: string): Record<string, unknown> | undefined {
   try {
     if (!existsSync(op)) return undefined;
     text = readFileSync(op, "utf-8");
-  } catch {
+  } catch (err) {
+    // The file is there but unreadable (permissions, a dangling symlink, a
+    // race with a delete). Every other failure below says so; staying silent
+    // here makes an unreadable override look exactly like an absent one.
+    console.warn(
+      `[model-router] ignoring ${op}: cannot read it — ${(err as Error).message}`,
+    );
     return undefined;
   }
 

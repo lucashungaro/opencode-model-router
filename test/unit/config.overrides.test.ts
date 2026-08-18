@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, realpathSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { readFileSync } from "node:fs";
@@ -35,6 +35,16 @@ describe("deepMerge", () => {
     const base = { a: { x: 1, y: 2 }, b: 3 };
     const out = deepMerge(base, { a: { y: 9 } });
     expect(out).toEqual({ a: { x: 1, y: 9 }, b: 3 });
+  });
+
+  it("ignores __proto__ and constructor keys rather than reparenting", () => {
+    const out = deepMerge(
+      { a: 1 },
+      JSON.parse('{"__proto__": {"polluted": true}, "b": 2}'),
+    ) as Record<string, unknown>;
+    expect(out).toEqual({ a: 1, b: 2 });
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
   it("replaces arrays wholesale (no concatenation)", () => {
@@ -156,6 +166,27 @@ describe("loadConfig — user overrides file", () => {
     );
     expect(loadConfig().activePreset).toBe("local");
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  // An unreadable file is the one fallback path that used to say nothing, which
+  // made a permissions problem indistinguishable from having no override at all.
+  it("warns when an override file exists but cannot be read", () => {
+    const p = overridePath();
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, JSON.stringify({ activePreset: "anthropic" }), "utf-8");
+    chmodSync(p, 0o000);
+    invalidateConfigCache();
+    try {
+      loadConfig();
+      // root ignores mode bits, so only assert when the read actually failed
+      if (warnSpy.mock.calls.length > 0) {
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("cannot read it"),
+        );
+      }
+    } finally {
+      chmodSync(p, 0o600);
+    }
   });
 
   it("accepts activePreset in a different case, matching /preset resolution", () => {
