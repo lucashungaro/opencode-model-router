@@ -6,6 +6,8 @@ import {
   resolvePresetName,
   writeState,
   invalidateConfigCache,
+  overridePath,
+  localOverridePath,
 } from "./router/config";
 import type { RouterConfig, TierConfig, Preset, ModeConfig } from "./router/config";
 import { fingerprintToolCall } from "./guard/fingerprint";
@@ -31,7 +33,7 @@ import type { Cap, SubagentState } from "./router/sessions";
 import { createTrajectoryStore } from "./telemetry/trajectory";
 import { createGuardStore } from "./guard/store";
 import { guardBeforeCall, guardAfterCall, formatScorecard } from "./guard/enforce";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute } from "node:path";
 import { exec as nodeExec } from "node:child_process";
@@ -125,6 +127,24 @@ function buildRouterOutput(cfg: RouterConfig, args: string): string {
       "Usage: `/router enforce <off|advisory|enforced>`",
     ].join("\n");
   }
+  if (sub === "overrides") {
+    const globalP = overridePath();
+    const localP = localOverridePath();
+    const mark = (p: string) => (existsSync(p) ? "present" : "absent");
+    return [
+      `# Model Router — config overrides`,
+      "",
+      "Config is loaded lowest→highest priority; each layer deep-merges over the previous one:",
+      "",
+      "1. bundled `tiers.json` (defaults)",
+      `2. global — \`${globalP}\` _(${mark(globalP)})_`,
+      `3. project — \`${localP}\` _(${mark(localP)})_`,
+      "",
+      `Active preset: **${cfg.activePreset}**. Run \`/tiers\` to see the effective models after merging.`,
+      "",
+      "Create either file to customize models/tiers/presets without editing the cached `tiers.json`. Objects merge recursively; arrays and scalars are replaced.",
+    ].join("\n");
+  }
   const current = resolveEnforcementMode({ config: cfg, env: process.env }).mode;
   return [
     `# Model Router`,
@@ -132,6 +152,7 @@ function buildRouterOutput(cfg: RouterConfig, args: string): string {
     "",
     "Commands:",
     "- `/router enforce <off|advisory|enforced>` — set hard-block enforcement (persisted)",
+    "- `/router overrides` — show the global + project override file paths and precedence",
     "- `/tiers`, `/preset`, `/budget`, `/bypass`, `/annotate-plan`",
   ].join("\n");
 }
@@ -1030,7 +1051,8 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       };
       opencodeConfig.command["router"] = {
         template: "$ARGUMENTS",
-        description: "Model-router controls (e.g., /router enforce off|advisory|enforced)",
+        description:
+          "Model-router controls (e.g., /router enforce off|advisory|enforced, /router overrides)",
       };
     },
 

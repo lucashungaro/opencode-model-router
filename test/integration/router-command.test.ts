@@ -77,5 +77,16 @@ describe("router-command integration", () => {
     const out = { parts: [] as any[] };
     await hooks["command.execute.before"]({ command: "router", arguments: "" }, out);
     expect(out.parts[0].text).toContain("Enforcement:");
+    expect(out.parts[0].text).toContain("/router overrides");
+  });
+
+  it("overrides shows both layer paths + precedence", async () => {
+    const out = { parts: [] as any[] };
+    await hooks["command.execute.before"]({ command: "router", arguments: "overrides" }, out);
+    const text = out.parts[0].text;
+    expect(text).toContain("config overrides");
+    expect(text).toContain("model-router-overrides.json"); // global path
+    expect(text).toContain(".opencode"); // project path
+    expect(text).toContain("Active preset");
   });
 });

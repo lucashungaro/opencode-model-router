@@ -120,6 +120,17 @@ export function overridePath(): string {
   );
 }
 
+/**
+ * Path to the optional project-local overrides file, resolved against the
+ * current working directory (the project root opencode runs in). It is
+ * deep-merged *after* (and therefore wins over) the global overrides file, so
+ * a team can commit a shared `.opencode/model-router-overrides.json` that
+ * unifies routing for the project on top of each member's personal global file.
+ */
+export function localOverridePath(): string {
+  return join(process.cwd(), ".opencode", "model-router-overrides.json");
+}
+
 export function statePath(): string {
   return join(
     homedir(),
@@ -465,8 +476,7 @@ export function deepMerge(base: unknown, override: unknown): unknown {
  * overrides file can never brick opencode startup — but the user still gets a
  * visible reason why their override was ignored.
  */
-function readOverrides(): Record<string, unknown> | undefined {
-  const op = overridePath();
+function readOverridesAt(op: string): Record<string, unknown> | undefined {
   let text: string;
   try {
     if (!existsSync(op)) return undefined;
@@ -492,28 +502,68 @@ function readOverrides(): Record<string, unknown> | undefined {
   }
 }
 
+/**
+ * The ordered override layers (lowest priority first): global, then
+ * project-local. Each present, well-formed file becomes a layer that is
+ * deep-merged over the ones before it.
+ */
+export interface OverrideLayer {
+  path: string;
+  data: Record<string, unknown>;
+}
+
+function collectOverrideLayers(): OverrideLayer[] {
+  const layers: OverrideLayer[] = [];
+  for (const p of [overridePath(), localOverridePath()]) {
+    const data = readOverridesAt(p);
+    if (data) layers.push({ path: p, data });
+  }
+  return layers;
+}
+
 export function loadConfig(): RouterConfig {
   if (_cachedConfig && !_configDirty) {
     return _cachedConfig;
   }
 
   const base = JSON.parse(readFileSync(configPath(), "utf-8"));
-  const overrides = readOverrides();
+  const layers = collectOverrideLayers();
 
-  let cfg: RouterConfig;
-  if (overrides) {
+  // Bundled config must be valid on its own — throw otherwise (unchanged
+  // behaviour). Override layers are then applied on top.
+  let cfg = validateConfig(base);
+
+  if (layers.length > 0) {
+    const merge = (ls: OverrideLayer[]): unknown =>
+      ls.reduce<unknown>((acc, l) => deepMerge(acc, l.data), base);
+
     try {
-      cfg = validateConfig(deepMerge(base, overrides));
+      cfg = validateConfig(merge(layers));
     } catch (err) {
-      // A bad override must never brick startup: fall back to the bundled
-      // config and tell the user why their override was dropped.
+      // A bad override must never brick startup, and one broken file must not
+      // discard a good one. Fall back to the highest-priority layer that
+      // validates on its own (so a broken personal/global file still lets a
+      // shared project file apply), else the bundled defaults.
       console.warn(
-        `[model-router] ignoring ${overridePath()}: merged config is invalid — ${(err as Error).message}`,
+        `[model-router] combined overrides are invalid (${(err as Error).message}); dropping conflicting layer(s)`,
       );
-      cfg = validateConfig(base);
+      for (let i = layers.length - 1; i >= 0; i--) {
+        try {
+          cfg = validateConfig(merge([layers[i]!]));
+          for (let j = 0; j < layers.length; j++) {
+            if (j !== i) {
+              console.warn(`[model-router] dropped override layer ${layers[j]!.path}`);
+            }
+          }
+          break;
+        } catch (singleErr) {
+          console.warn(
+            `[model-router] ignoring ${layers[i]!.path}: ${(singleErr as Error).message}`,
+          );
+          cfg = validateConfig(base);
+        }
+      }
     }
-  } else {
-    cfg = validateConfig(base);
   }
 
   try {
