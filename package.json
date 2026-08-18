@@ -12,6 +12,9 @@
     "typecheck": "tsc --noEmit"
   },
   "license": "GPL-3.0-only",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/marco-jardim/opencode-model-router.git"
