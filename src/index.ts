@@ -356,12 +356,34 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
     },
   };
   const verifyMutex = createMutexRegistry();
-  const dispatchGrader = async (req: {
-    tier: string;
-    system: string;
-    prompt: string;
-  }): Promise<{ sessionID: string; text: string }> => {
-    const created: any = await ctx.client.session.create({});
+  // Best-effort disposal of a plugin-created child session: abort any in-flight
+  // work, then delete it so it does not linger forever as a top-level session in
+  // the TUI. Fail-soft by contract — never throws, so it is safe to call from a
+  // finally without masking the original error.
+  const disposeChildSession = async (sid: string): Promise<void> => {
+    try {
+      await ctx.client.session.abort({ path: { id: sid } });
+    } catch {
+      // best-effort: the session may already have completed or been removed
+    }
+    try {
+      await ctx.client.session.delete({ path: { id: sid } });
+    } catch {
+      // best-effort: cleanup must never break the run
+    }
+  };
+
+  const dispatchGrader = async (
+    req: {
+      tier: string;
+      system: string;
+      prompt: string;
+    },
+    parentSessionID?: string,
+  ): Promise<{ sessionID: string; text: string }> => {
+    const created: any = await ctx.client.session.create({
+      body: { ...(parentSessionID ? { parentID: parentSessionID } : {}) },
+    });
     const sid: string | undefined = created?.data?.id;
     if (!sid) return { sessionID: "", text: "" };
     graderSessions.add(sid);
@@ -383,9 +405,10 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       return { sessionID: sid, text };
     } finally {
       graderSessions.delete(sid);
+      await disposeChildSession(sid);
     }
   };
-  const buildGateDeps = () => ({
+  const buildGateDeps = (parentSessionID?: string) => ({
     deterministic: {
       exec: execSeam,
       fs: fsSeam,
@@ -393,7 +416,8 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       mutex: verifyMutex,
     },
     checker: {
-      dispatchGrader,
+      dispatchGrader: (req: { tier: string; system: string; prompt: string }) =>
+        dispatchGrader(req, parentSessionID),
       ladder: ["fast", "medium", "heavy"],
       minGraderTier: cfg.enforcement?.verify?.minGraderTier ?? null,
     },
@@ -446,11 +470,18 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               "Optional [acceptance]...[/acceptance] block defining the Definition of Done (check: / criteria: / deliverable: directives).",
             ),
         },
-        async execute(args: {
-          task: string;
-          tier?: string;
-          acceptance?: string;
-        }): Promise<string> {
+        async execute(
+          args: {
+            task: string;
+            tier?: string;
+            acceptance?: string;
+          },
+          toolCtx?: { sessionID?: string },
+        ): Promise<string> {
+          // Every ladder iteration creates its own producer session. Tracked out
+          // here (not inside the try) so the finally below can dispose any that an
+          // early return or a throw skipped — otherwise each retry leaks another.
+          const producerSessions: string[] = [];
           try {
             let activeCfg = cfg;
             try {
@@ -494,11 +525,16 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                 ? `${scrubText(forcing)}\n\n${args.task}`
                 : args.task;
 
-              const created: any = await ctx.client.session.create({});
+              const created: any = await ctx.client.session.create({
+                body: {
+                  ...(toolCtx?.sessionID ? { parentID: toolCtx.sessionID } : {}),
+                },
+              });
               const producerSid: string | undefined = created?.data?.id;
               if (!producerSid) {
                 return "[router] delegate failed: could not create a producer session.";
               }
+              producerSessions.push(producerSid);
               // Compose with Layer 1: guard the plugin-created producer session.
               try {
                 sessionStore.registerProducerSession(producerSid, tier, activeCfg);
@@ -546,7 +582,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                 gateRes = await accept(
                   { dod, trivial: false, mode: "modeA" },
                   artefact,
-                  buildGateDeps(),
+                  buildGateDeps(toolCtx?.sessionID),
                 );
               } catch {
                 gateRes = {
@@ -572,6 +608,9 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               } catch {
                 // non-fatal
               }
+              // Dispose this attempt's backend session before the next iteration
+              // so a long ladder never accumulates live sessions.
+              await disposeChildSession(producerSid);
 
               const costRatio =
                 typeof tiersForCost?.[tier]?.costRatio === "number"
@@ -615,6 +654,14 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
             }
           } catch {
             return "[router] delegate failed (fail-closed): the delegation or verification could not complete.";
+          } finally {
+            // Safety net for every exit path an end-of-iteration dispose cannot
+            // reach: accept/give-up returns, the safety-net return, and throws.
+            // disposeChildSession is fail-soft, so re-disposing an already
+            // disposed session is harmless.
+            for (const sid of producerSessions) {
+              await disposeChildSession(sid);
+            }
           }
         },
       }) } : {}),
