@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { readFileSync } from "node:fs";
@@ -12,6 +12,31 @@ import {
   findProjectOverride,
   writeState,
 } from "../../src/router/config";
+
+// Switch used by the "cannot be read" test below to make exactly one path fail
+// at the fs boundary. `vi.mock` factories are hoisted above the imports, so the
+// flag it closes over has to be hoisted alongside them. Every other path — the
+// bundled tiers.json included — delegates to the real implementation, so this is
+// inert for every other test in this file.
+const fsMock = vi.hoisted(() => ({ unreadablePath: null as string | null }));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    default: actual,
+    readFileSync: (path: unknown, ...rest: unknown[]) => {
+      if (fsMock.unreadablePath !== null && String(path) === fsMock.unreadablePath) {
+        const err = new Error(
+          `EACCES: permission denied, open '${String(path)}'`,
+        ) as NodeJS.ErrnoException;
+        err.code = "EACCES";
+        throw err;
+      }
+      return (actual.readFileSync as (...a: unknown[]) => unknown)(path, ...rest);
+    },
+  };
+});
 
 // The bundled github-copilot heavy tier, read straight from tiers.json. These
 // tests are about merge/fallback behaviour, not about which model a preset
@@ -174,18 +199,18 @@ describe("loadConfig — user overrides file", () => {
     const p = overridePath();
     mkdirSync(dirname(p), { recursive: true });
     writeFileSync(p, JSON.stringify({ activePreset: "anthropic" }), "utf-8");
-    chmodSync(p, 0o000);
+    // Fail the read at the fs boundary rather than via chmod: mode bits are
+    // ignored when running as root and largely do not apply on Windows, so the
+    // old approach silently asserted nothing on two very common platforms.
+    fsMock.unreadablePath = p;
     invalidateConfigCache();
     try {
       loadConfig();
-      // root ignores mode bits, so only assert when the read actually failed
-      if (warnSpy.mock.calls.length > 0) {
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("cannot read it"),
-        );
-      }
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("cannot read it"),
+      );
     } finally {
-      chmodSync(p, 0o600);
+      fsMock.unreadablePath = null;
     }
   });
 
