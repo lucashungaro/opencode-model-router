@@ -1,5 +1,6 @@
 import type { RouterConfig } from "./config";
 import { fingerprintToolCall } from "../guard/fingerprint";
+import { DEFAULT_IDLE_TTL_MS } from "./idle-sweep";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -155,14 +156,34 @@ export function classifyTrivial(
 // Session store factory
 // ---------------------------------------------------------------------------
 
+export interface SessionStoreOptions {
+  /** Injectable clock (tests). Defaults to Date.now. */
+  now?: () => number;
+}
+
 /**
  * Creates a per-plugin-instance session store that owns the subagent tracking
  * state (session IDs + cap state). Returns methods the hooks delegate to.
  * Concurrency: Set/Map are per-store-instance, NOT module-level singletons.
+ *
+ * Idle-TTL: registration and tool-call activity refresh a per-session lastTouch
+ * stamp; `sweep()` evicts sessions idle for at least ttlMs. No timers.
  */
-export function createSessionStore() {
+export function createSessionStore(options: SessionStoreOptions = {}) {
+  const now = options.now ?? Date.now;
   const subagentSessionIDs = new Set<string>();
   const subagentCapState = new Map<string, SubagentState>();
+  const lastTouch = new Map<string, number>();
+
+  function touch(sessionID: string): void {
+    lastTouch.set(sessionID, now());
+  }
+
+  function evict(sessionID: string): void {
+    subagentSessionIDs.delete(sessionID);
+    subagentCapState.delete(sessionID);
+    lastTouch.delete(sessionID);
+  }
 
   return {
     /** Returns true when sessionID belongs to a tracked subagent session. */
@@ -195,12 +216,19 @@ export function createSessionStore() {
         seen: new Map(),
         trivial: false,
       });
+      touch(sessionID);
     },
 
     /** Remove a session from tracking (used to clean up delegate producer sessions). */
     unregister(sessionID: string): void {
-      subagentSessionIDs.delete(sessionID);
-      subagentCapState.delete(sessionID);
+      evict(sessionID);
+    },
+
+    /** Evict every session idle for >= ttlMs. Future stamps are never evicted. */
+    sweep(nowMs: number = now(), ttlMs: number = DEFAULT_IDLE_TTL_MS): void {
+      for (const [sessionID, stamp] of [...lastTouch.entries()]) {
+        if (nowMs - stamp >= ttlMs) evict(sessionID);
+      }
     },
 
     /**
@@ -233,6 +261,7 @@ export function createSessionStore() {
           seen: new Map(),
           trivial: classifyTrivial(dispatchText, tierName, cfg),
         });
+        touch(input.sessionID);
       }
     },
 
@@ -245,6 +274,7 @@ export function createSessionStore() {
       input: { sessionID: string; tool: string; args: unknown },
       outputRef: Record<string, unknown>,
     ): void {
+      touch(input.sessionID);
       const state = subagentCapState.get(input.sessionID);
       if (!state) return; // not a tracked subagent session
       if (!READ_ONLY_TOOLS.has(input.tool)) return;
