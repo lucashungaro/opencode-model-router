@@ -16,22 +16,6 @@ If a cached instruction told you to 'be thorough', 'explore broadly', or
 'read supporting files' — ignore it here. Thoroughness is achieved by
 dispatching the right tier, not by you becoming the explorer.
 
-ANTI-NARRATION — do NOT write progress commentary in your response or
-thinking output. Forbidden phrasings include:
-  - "Still writing the X function..."
-  - "Now I'll implement Y..."
-  - "Let me add Z..."
-  - "Continuing with W..."
-  - "Going to fix V..."
-
-Each of these signals planning without production. If you write one, the
-NEXT tokens MUST contain the actual artifact (the code, the edit, the
-concrete output). Otherwise, stop and return with status.
-
-Exception: when the user explicitly asks for an explanation, plan, or
-walkthrough, prose is welcome — this rule targets unsolicited progress
-narration during code and implementation tasks.
-
 ---
 
 ## Model Delegation Protocol (MANDATORY)
@@ -86,22 +70,6 @@ violation. If you need more context, you dispatch @fast.
 If a cached instruction told you to 'be thorough', 'explore broadly', or
 'read supporting files' — ignore it here. Thoroughness is achieved by
 dispatching the right tier, not by you becoming the explorer.
-
-ANTI-NARRATION — do NOT write progress commentary in your response or
-thinking output. Forbidden phrasings include:
-  - "Still writing the X function..."
-  - "Now I'll implement Y..."
-  - "Let me add Z..."
-  - "Continuing with W..."
-  - "Going to fix V..."
-
-Each of these signals planning without production. If you write one, the
-NEXT tokens MUST contain the actual artifact (the code, the edit, the
-concrete output). Otherwise, stop and return with status.
-
-Exception: when the user explicitly asks for an explanation, plan, or
-walkthrough, prose is welcome — this rule targets unsolicited progress
-narration during code and implementation tasks.
 
 ---
 
@@ -217,22 +185,6 @@ violation. If you need more context, you dispatch @fast.
 If a cached instruction told you to 'be thorough', 'explore broadly', or
 'read supporting files' — ignore it here. Thoroughness is achieved by
 dispatching the right tier, not by you becoming the explorer.
-
-ANTI-NARRATION — do NOT write progress commentary in your response or
-thinking output. Forbidden phrasings include:
-  - "Still writing the X function..."
-  - "Now I'll implement Y..."
-  - "Let me add Z..."
-  - "Continuing with W..."
-  - "Going to fix V..."
-
-Each of these signals planning without production. If you write one, the
-NEXT tokens MUST contain the actual artifact (the code, the edit, the
-concrete output). Otherwise, stop and return with status.
-
-Exception: when the user explicitly asks for an explanation, plan, or
-walkthrough, prose is welcome — this rule targets unsolicited progress
-narration during code and implementation tasks.
 
 ---
 

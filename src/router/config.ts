@@ -66,6 +66,14 @@ export interface RouterConfig {
   /** Read-only tool-call caps per tier, enforced at runtime via tool.execute.after banner injection. */
   tierCaps?: Record<string, number>;
   enforcement?: EnforcementConfig;
+  /**
+   * Claude-model anti-narration guardrail. When true, appends the anti-narration
+   * clause to Claude orchestrator/tier prompts and runs the post-hoc narration
+   * detector. Off by default: the clause costs ~162 tokens per Claude dispatch
+   * and the detector is non-blocking telemetry that false-positives on normal
+   * "Now I'll add X" phrasing.
+   */
+  antiNarration?: boolean;
   /** Experimental, opt-in features. Off by default. */
   experimental?: { verifiedDelegateTool?: boolean };
 }
@@ -182,6 +190,9 @@ export function validateConfig(raw: unknown): RouterConfig {
   }
   if (typeof obj.defaultTier !== "string") {
     throw new Error("tiers.json: 'defaultTier' must be a string");
+  }
+  if (obj.antiNarration !== undefined && typeof obj.antiNarration !== "boolean") {
+    throw new Error("tiers.json: 'antiNarration' must be a boolean");
   }
 
   // Validate modes if present
