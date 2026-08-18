@@ -10,6 +10,7 @@ import {
   overridePath,
   localOverridePath,
   findProjectOverride,
+  writeState,
 } from "../../src/router/config";
 
 // The bundled github-copilot heavy tier, read straight from tiers.json. These
@@ -147,6 +148,18 @@ describe("loadConfig — user overrides file", () => {
     expect(heavy.steps).toBe(BUNDLED_HEAVY.steps);
     expect(heavy.description).toBe(BUNDLED_HEAVY.description);
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("honors activePreset set in the override file (as a default)", () => {
+    writeOverride(JSON.stringify({ activePreset: "openai" }));
+    expect(loadConfig().activePreset).toBe("openai");
+  });
+
+  it("lets the persisted state file's activePreset win over the override", () => {
+    writeOverride(JSON.stringify({ activePreset: "openai" }));
+    writeState({ activePreset: "google" }); // runtime /preset selection
+    invalidateConfigCache();
+    expect(loadConfig().activePreset).toBe("google");
   });
 
   it("supports comments and trailing commas in the overrides file", () => {
