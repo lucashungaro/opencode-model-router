@@ -517,3 +517,146 @@ describe("findProjectOverride — upward search", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// findProjectOverride — walk boundaries. Without a repo marker the walk used to
+// run to the filesystem root and silently adopt an unrelated ancestor's file.
+// HOME is deliberately parked on a SIBLING directory here so these tests pin the
+// depth ceiling and the marker set, not the home-directory boundary.
+// ---------------------------------------------------------------------------
+
+describe("findProjectOverride — walk boundaries", () => {
+  const OVERRIDES = "opencode-model-router.overrides.jsonc";
+  let tmpRoot: string;
+  let savedHome: string | undefined;
+  let savedUserProfile: string | undefined;
+  let savedCwd: string;
+
+  beforeEach(() => {
+    savedHome = process.env.HOME;
+    savedUserProfile = process.env.USERPROFILE;
+    savedCwd = process.cwd();
+    tmpRoot = join(
+      tmpdir(),
+      `oc-mr-bound-${process.pid}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`,
+    );
+    // Sibling of the walk tree, so homedir() is never an ancestor of cwd.
+    const fakeHome = join(tmpRoot, "h");
+    mkdirSync(fakeHome, { recursive: true });
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    invalidateConfigCache();
+  });
+
+  afterEach(() => {
+    process.chdir(savedCwd);
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = savedUserProfile;
+    try {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+    invalidateConfigCache();
+  });
+
+  function write(path: string, obj: unknown): void {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(obj), "utf-8");
+  }
+
+  /** Build `levels` nested single-char dirs under `from`, returning the deepest. */
+  function nest(from: string, levels: number): string {
+    let dir = from;
+    for (let i = 0; i < levels; i++) dir = join(dir, "d");
+    mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  it("stops at the depth ceiling when no repo marker exists anywhere", () => {
+    const base = join(tmpRoot, "t");
+    // Override sits at the top; cwd is far deeper than the 16-level ceiling.
+    write(join(base, ".opencode", OVERRIDES), { defaultTier: "heavy" });
+    const deep = nest(base, 20);
+
+    process.chdir(deep);
+    expect(findProjectOverride()).toBeUndefined();
+  });
+
+  it("still finds a markerless project within the depth ceiling", () => {
+    const base = join(tmpRoot, "t");
+    const file = join(base, ".opencode", OVERRIDES);
+    write(file, { defaultTier: "fast" });
+    const deep = nest(base, 3);
+
+    process.chdir(deep);
+    expect(findProjectOverride()).toBe(realpathSync(file));
+  });
+
+  it("treats .hg as a repo root marker", () => {
+    write(join(tmpRoot, "t", ".opencode", OVERRIDES), { defaultTier: "heavy" });
+    const repo = join(tmpRoot, "t", "repo");
+    mkdirSync(join(repo, ".hg"), { recursive: true });
+    const sub = join(repo, "sub");
+    mkdirSync(sub, { recursive: true });
+
+    process.chdir(sub);
+    expect(findProjectOverride()).toBeUndefined();
+  });
+
+  it("treats .svn as a repo root marker", () => {
+    write(join(tmpRoot, "t", ".opencode", OVERRIDES), { defaultTier: "heavy" });
+    const repo = join(tmpRoot, "t", "repo");
+    mkdirSync(join(repo, ".svn"), { recursive: true });
+    const sub = join(repo, "sub");
+    mkdirSync(sub, { recursive: true });
+
+    process.chdir(sub);
+    expect(findProjectOverride()).toBeUndefined();
+  });
+
+  it("does NOT treat package.json as a marker (monorepo packages keep walking)", () => {
+    const repo = join(tmpRoot, "repo");
+    const file = join(repo, ".opencode", OVERRIDES);
+    write(file, { defaultTier: "fast" });
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    // A nested workspace package with its own manifest must not stop the walk.
+    const pkg = join(repo, "packages", "app");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(join(pkg, "package.json"), '{"name":"app"}', "utf-8");
+
+    process.chdir(pkg);
+    expect(findProjectOverride()).toBe(realpathSync(file));
+  });
+
+  it("never adopts ~/.opencode from an unrelated directory below home", () => {
+    // The original escape: a scratch dir under $HOME with no repo marker.
+    const home = join(tmpRoot, "home2");
+    write(join(home, ".opencode", OVERRIDES), { defaultTier: "heavy" });
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    const scratch = join(home, "scratch");
+    mkdirSync(scratch, { recursive: true });
+
+    process.chdir(scratch);
+    expect(findProjectOverride()).toBeUndefined();
+  });
+
+  it("still honours a home directory that is itself a repo root (dotfiles)", () => {
+    const home = join(tmpRoot, "home3");
+    const file = join(home, ".opencode", OVERRIDES);
+    write(file, { defaultTier: "fast" });
+    mkdirSync(join(home, ".git"), { recursive: true });
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    const sub = join(home, "sub");
+    mkdirSync(sub, { recursive: true });
+
+    process.chdir(sub);
+    expect(findProjectOverride()).toBe(realpathSync(file));
+  });
+});

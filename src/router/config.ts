@@ -141,21 +141,60 @@ export function localOverridePath(): string {
 }
 
 /**
+ * Repo-root markers. Each is one-per-repository, so finding one means the
+ * ancestor is a project root. `package.json` is deliberately NOT a marker: in a
+ * monorepo, `<repo>/packages/app/package.json` would stop the walk before it
+ * ever reached `<repo>/.opencode/`.
+ */
+const REPO_MARKERS = [".git", ".hg", ".svn"] as const;
+
+/**
+ * Hard ceiling on how many levels the walk may climb above the starting
+ * directory. Deep working directories in a monorepo
+ * (`<repo>/packages/<pkg>/src/<area>/<sub>/…`) sit roughly 8 levels below the
+ * root, so 16 leaves generous headroom while keeping the walk bounded on trees
+ * that contain no repo marker at all.
+ */
+const MAX_WALK_DEPTH = 16;
+
+/**
  * Locate the project-local overrides file by walking upward from the current
  * working directory, so the project config is found even when opencode is
- * launched from a subdirectory. The walk is bounded by the project root: it
- * stops at the first ancestor containing a `.git` entry (after checking that
- * ancestor) or at the filesystem root, whichever comes first — so it never
- * escapes the repo into unrelated parent directories. Returns the resolved
- * path, or undefined when no file exists within the project.
+ * launched from a subdirectory.
+ *
+ * The walk stops at the first of these, whichever comes first:
+ *   - an ancestor containing a repo marker (`.git`, `.hg`, `.svn`), after
+ *     checking that ancestor;
+ *   - `MAX_WALK_DEPTH` levels above the starting directory;
+ *   - the user's home directory, which is never treated as a project directory
+ *     unless it is itself a repo root;
+ *   - the filesystem root.
+ *
+ * The depth ceiling and the home-directory boundary matter because a directory
+ * tree with no repo marker anywhere would otherwise be walked all the way to the
+ * filesystem root, silently adopting an unrelated ancestor's override file.
+ * Returns the resolved path, or undefined when no file applies.
  */
 export function findProjectOverride(): string | undefined {
   let dir = process.cwd();
+  const home = homedir();
+  let depth = 0;
+
   for (;;) {
+    const hasMarker = REPO_MARKERS.some((m) => existsSync(join(dir, m)));
+
+    // $HOME is not a project directory. Only look inside it when it is itself a
+    // repo root (a dotfiles repo), otherwise `~/.opencode/…` would be picked up
+    // by any unrelated scratch directory below it.
+    if (dir === home && !hasMarker) return undefined;
+
     const candidate = join(dir, ".opencode", OVERRIDE_FILENAME);
     if (existsSync(candidate)) return candidate;
-    // Reached the project root without finding the file — stop here.
-    if (existsSync(join(dir, ".git"))) return undefined;
+
+    if (hasMarker) return undefined; // reached the project root, no file
+    if (dir === home) return undefined; // home was a repo root; never go above it
+    if (++depth >= MAX_WALK_DEPTH) return undefined;
+
     const parent = dirname(dir);
     if (parent === dir) return undefined; // filesystem root
     dir = parent;
