@@ -31,10 +31,12 @@ export interface TierConfig {
   reasoning?: ReasoningConfig;
   costRatio?: number;
   color?: string;
-  description: string;
+  /** Optional human-readable blurb shown in `/tiers` and the agent registration. */
+  description?: string;
   steps?: number;
   prompt?: string;
-  whenToUse: string[];
+  /** Optional use-case hints shown in `/tiers`. */
+  whenToUse?: string[];
 }
 
 export type Preset = Record<string, TierConfig>;
@@ -222,17 +224,20 @@ export function validateConfig(raw: unknown): RouterConfig {
         );
       }
       const t = tier as Record<string, unknown>;
+      // `model` is the only required tier field — so an overrides file can define
+      // a new preset/tier with just `{ "model": "..." }`. The rest are optional
+      // and only type-checked when present.
       if (typeof t.model !== "string" || !t.model) {
         throw new Error(
           `tiers.json: '${presetName}.${tierName}.model' must be a non-empty string`,
         );
       }
-      if (typeof t.description !== "string") {
+      if (t.description !== undefined && typeof t.description !== "string") {
         throw new Error(
           `tiers.json: '${presetName}.${tierName}.description' must be a string`,
         );
       }
-      if (!Array.isArray(t.whenToUse)) {
+      if (t.whenToUse !== undefined && !Array.isArray(t.whenToUse)) {
         throw new Error(
           `tiers.json: '${presetName}.${tierName}.whenToUse' must be an array`,
         );

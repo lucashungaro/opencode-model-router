@@ -164,21 +164,23 @@ describe("loadConfig — user overrides file", () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
-  it("can add an entirely new preset", () => {
+  it("can add an entirely new preset with only `model` per tier", () => {
     writeOverride(
       JSON.stringify({
         presets: {
           local: {
-            fast: {
-              model: "ollama/llama3",
-              description: "local fast",
-              whenToUse: ["recon"],
-            },
+            fast: { model: "local/qwen3.6-27b-mtp" },
+            medium: { model: "local/qwen3.6-27b-mtp" },
+            heavy: { model: "local/qwen3.6-27b-mtp" },
           },
         },
+        activePreset: "local",
       }),
     );
-    expect(loadConfig().presets.local!.fast!.model).toBe("ollama/llama3");
+    const cfg = loadConfig();
+    expect(cfg.activePreset).toBe("local");
+    expect(cfg.presets.local!.heavy!.model).toBe("local/qwen3.6-27b-mtp");
+    expect(warnSpy).not.toHaveBeenCalled(); // no validation failure → layer not dropped
   });
 
   it("warns and falls back to bundled config on invalid JSON", () => {

@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The project file is located by searching upward to the repo root and wins over the
   global file, which wins over the bundled defaults. Models, tiers, and whole presets can
   now be customized without editing the cached package file, which every plugin update
-  overwrites.
+  overwrites. An overrides file can also define an entirely new preset — `model` is the
+  only required field per tier (`description`, `whenToUse`, `costRatio`, `steps` and the
+  rest are optional).
 - **JSONC in the override files.** `//` and `/* */` comments and trailing commas are
   accepted, via a small zero-dependency parser (`src/router/jsonc.ts`). No new runtime
   dependencies.
