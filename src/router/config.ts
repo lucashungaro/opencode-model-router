@@ -121,14 +121,39 @@ export function overridePath(): string {
 }
 
 /**
- * Path to the optional project-local overrides file, resolved against the
- * current working directory (the project root opencode runs in). It is
- * deep-merged *after* (and therefore wins over) the global overrides file, so
- * a team can commit a shared `.opencode/model-router-overrides.json` that
- * unifies routing for the project on top of each member's personal global file.
+ * Default location of the project-local overrides file (`.opencode/
+ * model-router-overrides.json` in the current working directory). This is the
+ * path to *create* the file at; the actual lookup walks upward — see
+ * {@link findProjectOverride}. Used for display when no project file is found.
+ *
+ * The project file is deep-merged *after* (and therefore wins over) the global
+ * overrides file, so a team can commit a shared file that unifies routing for
+ * the project on top of each member's personal global file.
  */
 export function localOverridePath(): string {
   return join(process.cwd(), ".opencode", "model-router-overrides.json");
+}
+
+/**
+ * Locate the project-local overrides file by walking upward from the current
+ * working directory, so the project config is found even when opencode is
+ * launched from a subdirectory. The walk is bounded by the project root: it
+ * stops at the first ancestor containing a `.git` entry (after checking that
+ * ancestor) or at the filesystem root, whichever comes first — so it never
+ * escapes the repo into unrelated parent directories. Returns the resolved
+ * path, or undefined when no file exists within the project.
+ */
+export function findProjectOverride(): string | undefined {
+  let dir = process.cwd();
+  for (;;) {
+    const candidate = join(dir, ".opencode", "model-router-overrides.json");
+    if (existsSync(candidate)) return candidate;
+    // Reached the project root without finding the file — stop here.
+    if (existsSync(join(dir, ".git"))) return undefined;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined; // filesystem root
+    dir = parent;
+  }
 }
 
 export function statePath(): string {
@@ -514,7 +539,10 @@ export interface OverrideLayer {
 
 function collectOverrideLayers(): OverrideLayer[] {
   const layers: OverrideLayer[] = [];
-  for (const p of [overridePath(), localOverridePath()]) {
+  // Lowest priority first: global, then project-local (found by upward search).
+  const paths = [overridePath(), findProjectOverride()];
+  for (const p of paths) {
+    if (!p) continue;
     const data = readOverridesAt(p);
     if (data) layers.push({ path: p, data });
   }
