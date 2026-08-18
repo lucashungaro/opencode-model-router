@@ -24,6 +24,8 @@ You are the orchestrator: route each task to the right tier and delegate it with
 
 Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x).
 
+If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
+
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
 Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable. Cheapest-first when practical.
@@ -34,7 +36,9 @@ Err→retry-alt-tier→fail→direct. Chain: anthropic→openai→google→githu
 
 When dispatching: batch related @fast searches into one call and run independent ones in parallel (several Task calls in one message); give @medium concrete context (paths, patterns, how to verify).
 
-Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget. Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget (baseline @fast=8, @medium=5, @heavy=3). Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+
+This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here.
 
 ---
 
@@ -79,6 +83,8 @@ You are the orchestrator: route each task to the right tier and delegate it with
 
 Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x).
 
+If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
+
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
 Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable. Cheapest-first when practical.
@@ -89,7 +95,9 @@ Err→retry-alt-tier→fail→direct. Chain: anthropic→openai→google→githu
 
 When dispatching: batch related @fast searches into one call and run independent ones in parallel (several Task calls in one message); give @medium concrete context (paths, patterns, how to verify).
 
-Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget. Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch."
+Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget (baseline @fast=8, @medium=5, @heavy=3). Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+
+This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here."
 `;
 
 exports[`assembled-prompt golden > assembled-prompt-anthropic-model-openai > assembled-prompt-anthropic-model-openai 1`] = `
@@ -99,6 +107,8 @@ You are the orchestrator: route each task to the right tier and delegate it with
 
 Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x).
 
+If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
+
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
 Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable. Cheapest-first when practical.
@@ -109,7 +119,9 @@ Err→retry-alt-tier→fail→direct. Chain: anthropic→openai→google→githu
 
 When dispatching: batch related @fast searches into one call and run independent ones in parallel (several Task calls in one message); give @medium concrete context (paths, patterns, how to verify).
 
-Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget. Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch."
+Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget (baseline @fast=8, @medium=5, @heavy=3). Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+
+This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here."
 `;
 
 exports[`assembled-prompt golden > assembled-prompt-anthropic-model-undefined > assembled-prompt-anthropic-model-undefined 1`] = `
@@ -119,6 +131,8 @@ You are the orchestrator: route each task to the right tier and delegate it with
 
 Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x).
 
+If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
+
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
 Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable. Cheapest-first when practical.
@@ -129,7 +143,9 @@ Err→retry-alt-tier→fail→direct. Chain: anthropic→openai→google→githu
 
 When dispatching: batch related @fast searches into one call and run independent ones in parallel (several Task calls in one message); give @medium concrete context (paths, patterns, how to verify).
 
-Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget. Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch."
+Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget (baseline @fast=8, @medium=5, @heavy=3). Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+
+This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here."
 `;
 
 exports[`assembled-prompt golden > assembled-prompt-openai-enforcement-on > assembled-prompt-openai-enforcement-on 1`] = `
@@ -138,6 +154,8 @@ exports[`assembled-prompt golden > assembled-prompt-openai-enforcement-on > asse
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
 Preset: openai. Tiers: @fast=gpt-5.4-mini-fast(1x) @medium=gpt-5.5-fast/high(5x) @heavy=gpt-5.5-fast/xhigh(20x).
+
+If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
 
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
@@ -149,7 +167,9 @@ Err→retry-alt-tier→fail→direct. Chain: anthropic→google→github-copilot
 
 When dispatching: batch related @fast searches into one call and run independent ones in parallel (several Task calls in one message); give @medium concrete context (paths, patterns, how to verify).
 
-Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget. Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget (baseline @fast=8, @medium=5, @heavy=3). Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+
+This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here.
 
 ---
 
@@ -194,6 +214,8 @@ You are the orchestrator: route each task to the right tier and delegate it with
 
 Preset: openai. Tiers: @fast=gpt-5.4-mini-fast(1x) @medium=gpt-5.5-fast/high(5x) @heavy=gpt-5.5-fast/xhigh(20x).
 
+If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
+
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
 Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable. Cheapest-first when practical.
@@ -204,7 +226,9 @@ Err→retry-alt-tier→fail→direct. Chain: anthropic→google→github-copilot
 
 When dispatching: batch related @fast searches into one call and run independent ones in parallel (several Task calls in one message); give @medium concrete context (paths, patterns, how to verify).
 
-Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget. Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch."
+Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget (baseline @fast=8, @medium=5, @heavy=3). Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+
+This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here."
 `;
 
 exports[`assembled-prompt golden > assembled-prompt-openai-model-openai > assembled-prompt-openai-model-openai 1`] = `
@@ -214,6 +238,8 @@ You are the orchestrator: route each task to the right tier and delegate it with
 
 Preset: openai. Tiers: @fast=gpt-5.4-mini-fast(1x) @medium=gpt-5.5-fast/high(5x) @heavy=gpt-5.5-fast/xhigh(20x).
 
+If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
+
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
 Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable. Cheapest-first when practical.
@@ -224,7 +250,9 @@ Err→retry-alt-tier→fail→direct. Chain: anthropic→google→github-copilot
 
 When dispatching: batch related @fast searches into one call and run independent ones in parallel (several Task calls in one message); give @medium concrete context (paths, patterns, how to verify).
 
-Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget. Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch."
+Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget (baseline @fast=8, @medium=5, @heavy=3). Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+
+This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here."
 `;
 
 exports[`assembled-prompt golden > assembled-prompt-openai-model-undefined > assembled-prompt-openai-model-undefined 1`] = `
@@ -234,6 +262,8 @@ You are the orchestrator: route each task to the right tier and delegate it with
 
 Preset: openai. Tiers: @fast=gpt-5.4-mini-fast(1x) @medium=gpt-5.5-fast/high(5x) @heavy=gpt-5.5-fast/xhigh(20x).
 
+If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
+
 R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
 
 Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable. Cheapest-first when practical.
@@ -244,5 +274,7 @@ Err→retry-alt-tier→fail→direct. Chain: anthropic→google→github-copilot
 
 When dispatching: batch related @fast searches into one call and run independent ones in parallel (several Task calls in one message); give @medium concrete context (paths, patterns, how to verify).
 
-Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget. Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch."
+Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget (baseline @fast=8, @medium=5, @heavy=3). Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+
+This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here."
 `;

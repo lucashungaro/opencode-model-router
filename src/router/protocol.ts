@@ -117,6 +117,8 @@ export function buildDelegationProtocol(cfg: RouterConfig): string {
     ``,
     `Preset: ${cfg.activePreset}. Tiers: ${tierLine}.${modeSuffix}`,
     ``,
+    `If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.`,
+    ``,
     ...(taxonomy ? [taxonomy, ``] : []),
     ...(decompose ? [decompose, ``] : []),
     `Rules: ${rulesLine}`,
@@ -124,7 +126,9 @@ export function buildDelegationProtocol(cfg: RouterConfig): string {
     ``,
     `When dispatching: batch related @fast searches into one call and run independent ones in parallel (several Task calls in one message); give @medium concrete context (paths, patterns, how to verify).`,
     ``,
-    `Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget. Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.`,
+    `Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget (baseline @fast=8, @medium=5, @heavy=3). Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.`,
+    ``,
+    `This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here.`,
   ].join("\n");
 }
 
