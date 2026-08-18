@@ -245,14 +245,14 @@ The full default configuration lives in `tiers.json` at the plugin root. There a
 
 ### Recommended: overrides files (survive updates)
 
-Anything in an overrides file is **deep-merged** over the bundled `tiers.json` on load — you only specify the keys you want to change; everything else falls back to the defaults. These files live outside the cache dir, so they are **not** wiped when the plugin updates.
+Anything in an overrides file is **deep-merged** over the bundled `tiers.json` on load — you only specify the keys you want to change; everything else falls back to the defaults. These files live outside the cache dir, so they are **not** wiped when the plugin updates. They're `.jsonc`, so `//` and `/* */` comments and trailing commas are allowed.
 
 There are two layers, applied lowest→highest priority:
 
 | Layer | Path | Scope |
 |-------|------|-------|
-| **Global** | `~/.config/opencode/model-router-overrides.json` | Your personal defaults across all projects |
-| **Project** | `<project>/.opencode/model-router-overrides.json` | Per-project; commit it to share one routing config with your team |
+| **Global** | `~/.config/opencode/opencode-model-router.overrides.jsonc` | Your personal defaults across all projects |
+| **Project** | `<project>/.opencode/opencode-model-router.overrides.jsonc` | Per-project; commit it to share one routing config with your team |
 
 The project file deep-merges over (and wins against) the global file, which in turn merges over the bundled defaults. So you can keep personal preferences globally while a committed project file unifies routing for everyone on the repo. The project file is found by searching upward from the working directory to the repo root (the nearest ancestor containing `.git`), so it is picked up even when you launch opencode from a subdirectory.
 

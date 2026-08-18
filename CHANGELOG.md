@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Update-safe config overrides.** `~/.config/opencode/opencode-model-router.overrides.jsonc`
+  (global) and `<repo>/.opencode/opencode-model-router.overrides.jsonc` (project) are
+  deep-merged over the bundled `tiers.json` — specify only the keys you want to change.
+  The project file is located by searching upward to the repo root and wins over the
+  global file, which wins over the bundled defaults. Models, tiers, and whole presets can
+  now be customized without editing the cached package file, which every plugin update
+  overwrites.
+- **JSONC in the override files.** `//` and `/* */` comments and trailing commas are
+  accepted, via a small zero-dependency parser (`src/router/jsonc.ts`). No new runtime
+  dependencies.
+- **`/router overrides`** — prints the global and project override paths, which of them
+  exist, and the merge precedence.
+
 ## [1.4.0] - 2026-08-18
 
 Minor release: session lifecycle fixes, more reliable read-only delegation, and a
