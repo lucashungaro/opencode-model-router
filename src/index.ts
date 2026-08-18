@@ -42,7 +42,7 @@ import { access, readFile as fsReadFile } from "node:fs/promises";
 import { tool } from "@opencode-ai/plugin";
 import { scrubText } from "./guard/scrub";
 import { accept } from "./verify/gate";
-import { createMutexRegistry } from "./verify/deterministic";
+import { createVerificationWiring, extractAssistantText } from "./verify/wiring";
 import {
   createChangedFileStore,
   parseTaskResult,
@@ -336,120 +336,15 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   const guardStore = createGuardStore();
 
   const changedFileStore = createChangedFileStore();
-  const graderSessions = new Set<string>();
-
-  // Layer-2 real adapters (live-only; every call site is fail-closed).
-  const execSeam = (
-    command: string,
-    opts?: { cwd?: string; timeoutMs?: number },
-  ): Promise<{ code: number; stdout: string; stderr: string; timedOut: boolean }> =>
-    new Promise((resolve) => {
-      try {
-        nodeExec(
-          command,
-          {
-            cwd: opts?.cwd ?? ctx.directory,
-            timeout: opts?.timeoutMs ?? 120000,
-            maxBuffer: 10 * 1024 * 1024,
-            windowsHide: true,
-          },
-          (err: any, stdout: any, stderr: any) => {
-            const timedOut = !!(err && err.killed && err.signal === "SIGTERM");
-            const code =
-              err && typeof err.code === "number" ? err.code : err ? 1 : 0;
-            resolve({
-              code,
-              stdout: String(stdout ?? ""),
-              stderr: String(stderr ?? ""),
-              timedOut,
-            });
-          },
-        );
-      } catch {
-        resolve({ code: 1, stdout: "", stderr: "exec failed", timedOut: false });
-      }
+  // Layer-2's impure corner: exec, fs, and the opencode client, built once and
+  // read back through getConfig so a reloaded cfg (from /preset, /budget or
+  // /router enforce) applies to graded work too.
+  const { graderSessions, dispatchGrader, buildGateDeps, disposeChildSession } =
+    createVerificationWiring({
+      client: ctx.client,
+      directory: ctx.directory,
+      getConfig: () => cfg,
     });
-  const fsSeam = {
-    async fileExists(p: string): Promise<boolean> {
-      try {
-        await access(isAbsolute(p) ? p : join(ctx.directory, p));
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    async readFile(p: string): Promise<string> {
-      return await fsReadFile(isAbsolute(p) ? p : join(ctx.directory, p), "utf-8");
-    },
-  };
-  const verifyMutex = createMutexRegistry();
-  // Best-effort disposal of a plugin-created child session: abort any in-flight
-  // work, then delete it so it does not linger forever as a top-level session in
-  // the TUI. Fail-soft by contract — never throws, so it is safe to call from a
-  // finally without masking the original error.
-  const disposeChildSession = async (sid: string): Promise<void> => {
-    try {
-      await ctx.client.session.abort({ path: { id: sid } });
-    } catch {
-      // best-effort: the session may already have completed or been removed
-    }
-    try {
-      await ctx.client.session.delete({ path: { id: sid } });
-    } catch {
-      // best-effort: cleanup must never break the run
-    }
-  };
-
-  const dispatchGrader = async (
-    req: {
-      tier: string;
-      system: string;
-      prompt: string;
-    },
-    parentSessionID?: string,
-  ): Promise<{ sessionID: string; text: string }> => {
-    const created: any = await ctx.client.session.create({
-      body: { ...(parentSessionID ? { parentID: parentSessionID } : {}) },
-    });
-    const sid: string | undefined = created?.data?.id;
-    if (!sid) return { sessionID: "", text: "" };
-    graderSessions.add(sid);
-    try {
-      const model = tierModel(cfg, req.tier) ?? undefined;
-      const res: any = await ctx.client.session.prompt({
-        path: { id: sid },
-        body: {
-          ...(model ? { model } : {}),
-          system: req.system,
-          parts: [{ type: "text", text: req.prompt }],
-        },
-      });
-      const parts: any[] = res?.data?.parts ?? [];
-      const text = parts
-        .filter((p) => p?.type === "text" && typeof p.text === "string")
-        .map((p) => p.text)
-        .join("\n");
-      return { sessionID: sid, text };
-    } finally {
-      graderSessions.delete(sid);
-      await disposeChildSession(sid);
-    }
-  };
-  const buildGateDeps = (parentSessionID?: string) => ({
-    deterministic: {
-      exec: execSeam,
-      fs: fsSeam,
-      cwd: ctx.directory,
-      mutex: verifyMutex,
-    },
-    checker: {
-      dispatchGrader: (req: { tier: string; system: string; prompt: string }) =>
-        dispatchGrader(req, parentSessionID),
-      ladder: ["fast", "medium", "heavy"],
-      minGraderTier: cfg.enforcement?.verify?.minGraderTier ?? null,
-    },
-    require: cfg.enforcement?.verify?.require,
-  });
 
   // Best-effort, secret-free delegate scorecard dump (counts only).
   const dumpDelegateScorecard = (
@@ -587,11 +482,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                     parts: [{ type: "text", text: taskText }],
                   },
                 });
-                const parts: any[] = res?.data?.parts ?? [];
-                producerText = parts
-                  .filter((p) => p?.type === "text" && typeof p.text === "string")
-                  .map((p) => p.text)
-                  .join("\n");
+                producerText = extractAssistantText(res);
               } catch {
                 producerText = "";
               }
