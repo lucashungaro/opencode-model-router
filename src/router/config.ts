@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -249,8 +256,22 @@ const MAX_WALK_DEPTH = 16;
  * Returns the resolved path, or undefined when no file applies.
  */
 export function findProjectOverride(): string | undefined {
-  let dir = process.cwd();
-  const home = homedir();
+  // Both sides of the $HOME comparison below have to be resolved the same way.
+  // process.cwd() returns a realpath, while homedir() returns $HOME verbatim, so
+  // on any system where $HOME contains a symlinked component (macOS temp dirs,
+  // containers, some NFS homes) a raw string compare never matches and the home
+  // boundary silently stops applying. Fail soft: an unresolvable path is used
+  // as-is, which is no worse than not comparing at all.
+  const resolve = (p: string): string => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return p;
+    }
+  };
+
+  let dir = resolve(process.cwd());
+  const home = resolve(homedir());
   let depth = 0;
 
   for (;;) {
