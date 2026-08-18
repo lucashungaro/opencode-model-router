@@ -5,7 +5,10 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.0] - 2026-08-18
+
+Minor release: update-safe configuration overrides, so customizations survive the plugin
+updates that overwrite the cached package file.
 
 ### Added
 
@@ -18,11 +21,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overwrites. An overrides file can also define an entirely new preset — `model` is the
   only required field per tier: `costRatio`/`steps` default to the conventional `1`/`5`/`20`
   and `30`/`50`/`120` by tier name when omitted, and `description`/`whenToUse` are optional.
+  Contributed by Lucas Húngaro. ([#22], closes [#2] and [#4])
 - **JSONC in the override files.** `//` and `/* */` comments and trailing commas are
   accepted, via a small zero-dependency parser (`src/router/jsonc.ts`). No new runtime
   dependencies.
 - **`/router overrides`** — prints the global and project override paths, which of them
   exist, and the merge precedence.
+
+### Fixed
+
+- **The upward search for the project override file is now bounded.** It stops at a
+  `.git`, `.hg`, or `.svn` marker, at 16 levels above the working directory, or at the
+  user's home directory. A tree containing no repo marker previously walked all the way
+  to the filesystem root, so running opencode from a non-repo directory could silently
+  adopt an unrelated ancestor's override file. `package.json` is deliberately not treated
+  as a repo marker: in a monorepo it would stop the walk at `packages/<pkg>/` before
+  reaching the repo-root `.opencode/`. ([`8710a84`])
+
+[`8710a84`]: https://github.com/marco-jardim/opencode-model-router/commit/8710a84
+[#2]: https://github.com/marco-jardim/opencode-model-router/issues/2
+[#4]: https://github.com/marco-jardim/opencode-model-router/issues/4
+[#22]: https://github.com/marco-jardim/opencode-model-router/pull/22
 
 ## [1.4.0] - 2026-08-18
 
