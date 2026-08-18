@@ -873,7 +873,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
     // post-hoc signal.
     // -----------------------------------------------------------------------
     "experimental.text.complete": async (input: any, output: any) => {
-      if (bypassed) return;
+      if (bypassed || !cfg.antiNarration) return;
       const text = output?.text;
       if (typeof text !== "string" || text.length < 20) return;
 
@@ -939,7 +939,9 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         // Detection is by model string, so hybrid presets get the override
         // only on their Claude-backed tiers.
         const claudePrefix = isClaudeModel(tier.model)
-          ? `${CLAUDE_TIER_PREFIX[name]}\n\n${CLAUDE_ANTI_NARRATION}`
+          ? cfg.antiNarration
+            ? `${CLAUDE_TIER_PREFIX[name]}\n\n${CLAUDE_ANTI_NARRATION}`
+            : CLAUDE_TIER_PREFIX[name]
           : undefined;
         const finalPrompt =
           claudePrefix && resolvedPrompt

@@ -526,11 +526,17 @@ Detection is by model string, not preset. A `hybrid` preset that mixes providers
 
 No configuration is needed — the prefixes are always applied for Claude-backed tiers. If you want to disable them, override the tier's `prompt` field (per-tier overrides replace the whole prompt, including the prefix).
 
-### Anti-narration guardrail (Claude models)
+### Anti-narration guardrail (Claude models, opt-in)
 
-Thinking-enabled Claude models (especially Sonnet with the `max` variant) sometimes produce progress narration instead of actual work — phrasings like *"Still writing the X function..."*, *"Now I'll implement Y..."*, *"Let me add Z..."* — without the X/Y/Z ever appearing. This is a known thinking-mode failure pattern.
+Some Claude models (historically, thinking-enabled Sonnet with the `max` variant) can produce progress narration instead of actual work, phrasings like *"Still writing the X function..."*, *"Now I'll implement Y..."*, *"Let me add Z..."*, without the X/Y/Z ever appearing.
 
-The router counters this on two layers:
+This guardrail is **off by default**. It costs ~162 tokens per Claude dispatch (the prompt clause) and its detector false-positives on normal productive phrasing like "Now I'll add the test" when the test does follow, so it is opt-in. Enable it only if you actually observe narration-without-production on your models:
+
+```jsonc
+{ "antiNarration": true }
+```
+
+When enabled, it works on two layers:
 
 **1. Prompt-level clause (prevention).** A dedicated `ANTI-NARRATION` block is appended to every Claude-backed tier prompt and to the Claude-backed orchestrator delegation protocol. It names the forbidden phrasings explicitly and requires concrete output to follow any such phrase. A carve-out preserves legitimate explanation/plan requests from the user.
 
@@ -556,7 +562,7 @@ Detected patterns (conservative set to minimize false positives):
 - `Going to (write|implement|...) the X`
 - `Continuing (with|by ...ing) (the )? X`
 
-Applies to all models, not only Claude — but the prompt-level clause is Claude-only, so non-Claude models get detector-only.
+When `antiNarration` is enabled, the detector runs for all models (not only Claude), while the prompt-level clause is Claude-only, so non-Claude models get detector-only. With the default (`antiNarration` off), neither layer runs.
 
 ### Tier fields reference
 

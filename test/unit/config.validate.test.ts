@@ -76,6 +76,10 @@ describe("validateConfig — root shape", () => {
   it("throws when defaultTier is not a string", () => {
     expect(() => validateConfig(validRaw({ defaultTier: 3 }))).toThrow(/defaultTier/);
   });
+  it("accepts antiNarration boolean, rejects non-boolean", () => {
+    expect(() => validateConfig(validRaw({ antiNarration: true }))).not.toThrow();
+    expect(() => validateConfig(validRaw({ antiNarration: "yes" }))).toThrow(/antiNarration/);
+  });
 });
 
 describe("validateConfig — tier shape", () => {
