@@ -600,7 +600,7 @@ The read-only cap banners described above are advisory: a well-behaved subagent 
 ### The three enforcement layers
 
 - **Layer 1 — hard-block guard.** A `tool.execute.before` hook throws before a disallowed tool call executes, stopping budget overruns, redundant reads, and throwaway-script sidesteps in subagent sessions.
-- **Layer 2 — independent acceptance gate.** Every non-trivial delegation carries a Definition-of-Done (DoD) that is checked — deterministically or by an independent grader at ≥ the producer's tier — before the result is trusted. The producer never grades its own output.
+- **Layer 2 — independent acceptance gate.** A non-trivial delegation carries a Definition-of-Done (DoD) that is checked — deterministically or by an independent grader at ≥ the producer's tier — before the result is trusted. The producer never grades its own output. Two cases are skipped rather than checked: a trivial dispatch carrying only an inferred DoD, and a dispatch whose inferred DoD has no deterministic checks and which changed no files. An explicit `[acceptance]` block is always verified. See [docs/VERIFICATION.md](docs/VERIFICATION.md).
 - **Layer 3 — quality-escalation ladder.** On a failed check: retry once, then escalate fast → medium → heavy, bounded by attempt and cost ceilings. The loop ends in an honest `status: unmet` rather than a fabricated pass.
 
 ### Two operating modes

@@ -62,6 +62,12 @@ The plan's own `[acceptance]` block is the DoD (source `annotation`). A non-triv
 
 A **trivial** dispatch carrying only an **auto-inferred** DoD is skipped. An **explicit** or **annotation** block is always verified regardless of how the dispatch is classified.
 
+### No-files-changed skip
+
+A native `Task()` dispatch is also skipped when all three hold: the DoD is **inferred**, its kind is **checker** (no deterministic checks to run), and the delegation **changed no files**. Inference always synthesizes a criterion from the task's first line, so without this rule a research delegation gets graded against an imperative it was never meant to satisfy, and legitimate findings come back with a false "not accepted" note.
+
+**Know the trade.** This is a property of the delegation, not of its intent, and the two are indistinguishable under an inferred DoD. An *implementation* delegation that reports success but writes no files is skipped by the same rule, so the grader no longer gets a chance to flag "claims the work is done but changed nothing". If you want that case verified, give the dispatch an explicit `[acceptance]` block: explicit and annotation DoDs are always verified, and a `check:` directive makes the DoD deterministic rather than checker-only, so neither condition above is met.
+
 ## Artefact
 
 The gate verifies the artefact attributed to the producer session:
