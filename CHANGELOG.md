@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file path (well-known extensionless files like `Makefile` or `LICENSE` count),
   no multi-step marker (numbered or colon-numbered lists, sequencing words, `;`,
   `&&`), no enumeration of three or more subjects, no multiple imperative lines,
-  and a length backstop. Genuine single-shot lookups stay exempt, and real work
+  no distributive breadth quantifier (`every` / `all` over a plural or collective
+  target class, as in `read all guard modules` — partitive depth over a single
+  file such as `read every line of package.json` stays trivial), and a length
+  backstop. Genuine single-shot lookups stay exempt, and real work
   was never trivial either way. Present since
   proportional enforcement landed (`80abf05`) and shipped in every release that
   included it. The `enforcement.proportional.trivialBypass` knob and its semantics

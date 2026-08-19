@@ -134,14 +134,21 @@ trivial only when *all* of the following hold (see `classifyTrivial` in
 7. it contains **no enumeration of three or more subjects** (`router, guard and
    verify`) and **no second imperative line** — both signal breadth even when no
    file is named;
-8. it is **at most 240 characters** long.
+8. it carries **no distributive breadth quantifier** — `every` / `all` scoping a
+   plural or collective target class (`read all guard modules`, `search every
+   config file`) is a fan-out even with no comma, connector, second line or named
+   path. The quantifier must scope a *class*, so partitive depth over one file
+   stays trivial (`read every line of package.json`, `read all of src/index.ts`).
+   Illustrative, not exhaustive — see `DISTRIBUTIVE_RE` for the authoritative
+   pattern (`each` and `for every` are covered by clause 6 instead);
+9. it is **at most 240 characters** long.
 
 So `read package.json and tell me the version` is trivial and is exempted from
 enforced-mode hard blocks, while `read README.md, then package.json, then
 src/index.ts, one at a time` is **not** — it is multi-file, sequenced recon, and
 stays fully enforced.
 
-> Clauses 5–8 were added to fix a bug in which *any* `fast` dispatch containing a
+> Clauses 5–9 were added to fix a bug in which *any* `fast` dispatch containing a
 > stem like `read` was trivial. That exempted multi-file recon from enforcement,
 > so the `read_budget` guard could never hard-block a `@fast` subagent — the exact
 > runaway it exists to bound. Setting `trivialBypass: false` disables the exemption
