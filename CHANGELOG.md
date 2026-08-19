@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`thinking.budgetTokens: 0` no longer swallows a tier's `effort`.** Behavior change:
+  suppression used `budgetTokens != null` while emission required a truthy value, so a
+  Claude tier with `thinking: { budgetTokens: 0 }` plus `effort` warned that "explicit
+  thinking wins" and then registered neither key. A truthy `budgetTokens` is now the
+  single notion of "thinking was asked for": `0` is ignored (one-time notice per tier)
+  and `effort` applies normally.
 - **Enforced-mode hard blocks now apply to non-trivial `@fast` recon.** Trivial
   classification exempted *any* `fast`-tier dispatch whose text matched a `fast`
   taskPattern stem (`read`, `search`, `grep`, …) from enforcement, so a multi-file

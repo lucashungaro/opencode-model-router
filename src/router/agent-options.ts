@@ -47,19 +47,28 @@ function isOpenAIModel(model: string): boolean {
 /**
  * Provider-specific agent options for a tier, as registered with opencode.
  *
- * Precedence, highest first: explicit `thinking` (Anthropic) or explicit
- * `reasoning.effort` (OpenAI), then the provider-agnostic `effort`. A key is
+ * Precedence, highest first: explicit `thinking` with a truthy `budgetTokens`
+ * (Anthropic) or explicit `reasoning.effort` (OpenAI), then the
+ * provider-agnostic `effort`. A `budgetTokens` of 0 asks for nothing and so
+ * loses to `effort`, with a one-time notice per tier. A key is
  * only ever present when something asked for it — an unset `effort` leaves no
  * trace in the returned object.
  */
 export function buildAgentOptions(tier: TierConfig, tierName = tier.model): Record<string, unknown> {
   const opts: Record<string, unknown> = {};
 
-  // Anthropic thinking config
-  if (tier.thinking?.budgetTokens != null) {
-    if (tier.thinking.budgetTokens) {
-      opts.budget_tokens = tier.thinking.budgetTokens;
-    }
+  // Anthropic thinking config. A zero budget asks for no extended thinking at
+  // all, so it is neither emitted nor treated as an explicit thinking config
+  // below — `hasThinkingBudget` is the single notion of "thinking was asked
+  // for", shared by the emission and the effort precedence check.
+  const hasThinkingBudget = Boolean(tier.thinking?.budgetTokens);
+  if (hasThinkingBudget) {
+    opts.budget_tokens = tier.thinking?.budgetTokens;
+  } else if (tier.thinking?.budgetTokens === 0) {
+    warnAgentOptionsEffortOnce(
+      `thinking-zero:${tierName}`,
+      `tier ${tierName}: thinking.budgetTokens: 0 is ignored`,
+    );
   }
 
   // OpenAI reasoning config
@@ -83,7 +92,7 @@ export function buildAgentOptions(tier: TierConfig, tierName = tier.model): Reco
         `tier ${tierName}: invalid effort '${String(effort)}' ignored`,
       );
     } else if (isClaudeModel(tier.model)) {
-      if (tier.thinking?.budgetTokens != null) {
+      if (hasThinkingBudget) {
         warnAgentOptionsEffortOnce(
           `anthropic-conflict:${tierName}`,
           `tier ${tierName}: both thinking and effort set; explicit thinking wins`,

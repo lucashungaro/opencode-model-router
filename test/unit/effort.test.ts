@@ -214,6 +214,49 @@ describe("per-tier effort agent options", () => {
     ).toEqual({ effort: "low" });
     expect(warn).not.toHaveBeenCalled();
   });
+
+  test("applies Anthropic effort when thinking.budgetTokens is 0", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    expect(
+      buildAgentOptions(
+        tier("anthropic/claude-fable-5", { effort: "low", thinking: { budgetTokens: 0 } }),
+        "fast",
+      ),
+    ).toEqual({ effort: "low" });
+
+    // A zero budget is not a thinking config, so it must not claim the conflict.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("thinking.budgetTokens: 0 is ignored");
+    expect(warn.mock.calls[0]?.[0]).not.toContain("explicit thinking wins");
+  });
+
+  test("lets truthy thinking.budgetTokens beat effort with a conflict warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    expect(
+      buildAgentOptions(
+        tier("anthropic/claude-fable-5", { effort: "low", thinking: { budgetTokens: 1 } }),
+        "fast",
+      ),
+    ).toEqual({ budget_tokens: 1 });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("explicit thinking wins");
+  });
+
+  test("emits nothing for thinking.budgetTokens 0 without effort", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    expect(
+      buildAgentOptions(
+        tier("anthropic/claude-fable-5", { thinking: { budgetTokens: 0 } }),
+        "fast",
+      ),
+    ).toEqual({});
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("thinking.budgetTokens: 0 is ignored");
+    expect(warn.mock.calls[0]?.[0]).not.toContain("effort");
+  });
 });
 
 describe("effort warn-once keying", () => {
@@ -246,6 +289,18 @@ describe("effort warn-once keying", () => {
     buildAgentOptions(rawTier("openai/gpt-5", { effort: "bogus" }), "fast");
 
     expect(warn).toHaveBeenCalledTimes(3);
+  });
+
+  test("keys the zero-budget notice by tier", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const zeroBudget = { thinking: { budgetTokens: 0 } };
+
+    buildAgentOptions(tier("anthropic/claude-fable-5", zeroBudget), "fast");
+    buildAgentOptions(tier("anthropic/claude-fable-5", zeroBudget), "fast");
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    buildAgentOptions(tier("anthropic/claude-fable-5", zeroBudget), "medium");
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 
   test("keys OpenAI downgrades by tier and by level", () => {
