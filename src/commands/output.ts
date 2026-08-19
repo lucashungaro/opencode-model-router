@@ -11,34 +11,10 @@
  * what happened — which made the output impossible to test without a state
  * file on disk and a plugin instance to hang it off.
  */
-import type { RouterConfig, TierConfig, ModeConfig } from "../router/config";
+import type { RouterConfig, ModeConfig } from "../router/config";
 import { getActiveTiers } from "../router/protocol";
 import { resolvePromptStyle } from "../router/prompts";
 import type { Catalog, ModelIssue } from "../router/catalog";
-
-/** Provider-specific agent options (thinking / reasoning) for a tier. */
-export function buildAgentOptions(tier: TierConfig): Record<string, unknown> {
-  const opts: Record<string, unknown> = {};
-
-  // Anthropic thinking config
-  if (tier.thinking) {
-    if (tier.thinking.budgetTokens) {
-      opts.budget_tokens = tier.thinking.budgetTokens;
-    }
-  }
-
-  // OpenAI reasoning config
-  if (tier.reasoning) {
-    if (tier.reasoning.effort) {
-      opts.reasoning_effort = tier.reasoning.effort;
-    }
-    if (tier.reasoning.summary) {
-      opts.reasoning_summary = tier.reasoning.summary;
-    }
-  }
-
-  return Object.keys(opts).length > 0 ? opts : {};
-}
 
 /** `/tiers` */
 export function buildTiersOutput(cfg: RouterConfig): string {
@@ -256,13 +232,15 @@ export function buildModelsOutput(
   catalog: Catalog | null,
   filter: string,
   orphanedStrongPatterns: string[] = [],
+  strongPatternNearMisses: Record<string, string[]> = {},
 ): string {
   // Orphan patterns are pure config analysis, so they are appended to EVERY
   // return path — including the catalog-unavailable ones, where the warning is
   // just as valid.
   const suffix =
     orphanedStrongPatterns.length > 0
-      ? "\n\n" + formatOrphanedStrongPatterns(orphanedStrongPatterns)
+      ? "\n\n" +
+        formatOrphanedStrongPatterns(orphanedStrongPatterns, strongPatternNearMisses)
       : "";
   if (!catalog) {
     return (
@@ -311,10 +289,22 @@ export function buildModelsOutput(
  * `findOrphanedStrongPatterns`). Report-only — the router never edits the
  * user's pattern list.
  */
-export function formatOrphanedStrongPatterns(patterns: string[]): string {
+export function formatOrphanedStrongPatterns(
+  patterns: string[],
+  nearMisses: Record<string, string[]> = {},
+): string {
   return [
     "⚠ **Strong-model patterns matching no model your providers serve:**",
-    ...patterns.map((p) => `- \`${p}\``),
+    ...patterns.map((p) => {
+      const near = nearMisses[p] ?? [];
+      if (near.length === 0) return `- \`${p}\``;
+      // Named separately from the generic rename hint below: when we can point
+      // at the served id, the user can fix it without going to look.
+      return `- \`${p}\` — served under a different separator: ${near
+        .slice(0, 3)
+        .map((r) => `\`${r}\``)
+        .join(", ")}`;
+    }),
     "",
     "Any tier on `promptStyle: auto` that relied on one of these now resolves to the **prescriptive** prompt, silently. If a provider renamed a model, update `modelGenerations.strong` in your overrides file (`/router overrides`).",
   ].join("\n");

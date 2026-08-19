@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   findOrphanedStrongPatterns,
+  findStrongPatternNearMisses,
   normalizeCatalog,
   isCatalogEmpty,
   parseModelRef,
@@ -416,5 +417,58 @@ describe("findOrphanedStrongPatterns", () => {
     expect(findOrphanedStrongPatterns(cfg, catalogOf("openai/gpt-5"))).toEqual([
       "opus-4-8",
     ]);
+  });
+});
+
+describe("findStrongPatternNearMisses", () => {
+  const cat = (...refs: string[]): Catalog =>
+    ({
+      providers: [
+        {
+          id: "anthropic",
+          name: "anthropic",
+          models: refs.map((r) => ({ id: r, status: "active" as const })),
+        },
+      ],
+    }) as Catalog;
+
+  // The reason this exists: a provider moving hyphen to dot un-matches a
+  // pattern that is still naming the right model.
+  it("finds a served model that differs only by separator", () => {
+    expect(
+      findStrongPatternNearMisses("opus-4-8", cat("claude-opus-4.8")),
+    ).toEqual(["anthropic/claude-opus-4.8"]);
+  });
+
+  it("works in the other direction too", () => {
+    expect(
+      findStrongPatternNearMisses("opus-4.8", cat("claude-opus-4-8")),
+    ).toEqual(["anthropic/claude-opus-4-8"]);
+  });
+
+  it("treats underscores as a separator as well", () => {
+    expect(
+      findStrongPatternNearMisses("opus-4-8", cat("claude_opus_4_8")),
+    ).toEqual(["anthropic/claude_opus_4_8"]);
+  });
+
+  it("returns empty when the pattern is simply wrong", () => {
+    expect(findStrongPatternNearMisses("opus-9", cat("claude-opus-4.8"))).toEqual([]);
+  });
+
+  it("is case-insensitive", () => {
+    expect(
+      findStrongPatternNearMisses("OPUS-4-8", cat("claude-Opus-4.8")),
+    ).toEqual(["anthropic/claude-Opus-4.8"]);
+  });
+
+  it("returns every match, not just the first", () => {
+    expect(
+      findStrongPatternNearMisses("opus-4-8", cat("claude-opus-4.8", "claude-opus-4_8")),
+    ).toHaveLength(2);
+  });
+
+  it("returns empty for an all-separator pattern rather than matching everything", () => {
+    expect(findStrongPatternNearMisses("---", cat("claude-opus-4.8"))).toEqual([]);
   });
 });

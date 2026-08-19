@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildAgentOptions,
   buildTiersOutput,
   buildPresetList,
   buildPresetSwitched,
@@ -16,6 +15,7 @@ import {
   buildRouterHelp,
   buildModelsOutput,
   formatModelIssues,
+  formatOrphanedStrongPatterns,
 } from "../../src/commands/output";
 import type { RouterConfig, ModeConfig } from "../../src/router/config";
 import type { Catalog, ModelIssue } from "../../src/router/catalog";
@@ -36,27 +36,6 @@ function cfg(over: Partial<RouterConfig> = {}): RouterConfig {
     ...over,
   } as RouterConfig;
 }
-
-describe("buildAgentOptions", () => {
-  it("returns an empty object when the tier declares neither block", () => {
-    expect(buildAgentOptions({ model: "m" } as never)).toEqual({});
-  });
-
-  it("maps anthropic thinking budget", () => {
-    expect(
-      buildAgentOptions({ model: "m", thinking: { budgetTokens: 4096 } } as never),
-    ).toEqual({ budget_tokens: 4096 });
-  });
-
-  it("maps openai reasoning effort and summary", () => {
-    expect(
-      buildAgentOptions({
-        model: "m",
-        reasoning: { effort: "high", summary: "auto" },
-      } as never),
-    ).toEqual({ reasoning_effort: "high", reasoning_summary: "auto" });
-  });
-});
 
 describe("buildTiersOutput", () => {
   it("lists each tier with model, steps and use cases", () => {
@@ -405,5 +384,35 @@ describe("formatModelIssues", () => {
     expect(out).toContain("`ghost` is not a defined preset");
     expect(out).toContain("silently dropped");
     expect(out).toContain("Try: `p`.");
+  });
+});
+
+describe("formatOrphanedStrongPatterns — near misses", () => {
+  it("renders bare when no near miss is known", () => {
+    const out = formatOrphanedStrongPatterns(["opus-9"]);
+    expect(out).toContain("- `opus-9`");
+    expect(out).not.toContain("different separator");
+  });
+
+  it("names the served id when there is one", () => {
+    const out = formatOrphanedStrongPatterns(
+      ["opus-4-8"],
+      { "opus-4-8": ["anthropic/claude-opus-4.8"] },
+    );
+    expect(out).toContain("served under a different separator");
+    expect(out).toContain("`anthropic/claude-opus-4.8`");
+  });
+
+  it("caps the list at three", () => {
+    const out = formatOrphanedStrongPatterns(["p"], { p: ["a/1", "a/2", "a/3", "a/4"] });
+    expect(out).toContain("`a/3`");
+    expect(out).not.toContain("`a/4`");
+  });
+
+  // Defaulting the map keeps every existing call site working unchanged.
+  it("is unchanged from the one-argument form when no map is passed", () => {
+    expect(formatOrphanedStrongPatterns(["x"])).toBe(
+      formatOrphanedStrongPatterns(["x"], {}),
+    );
   });
 });
