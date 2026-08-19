@@ -27,6 +27,8 @@ import {
   buildEnforceStatus,
   buildOverridesOutput,
   buildRouterHelp,
+  buildModelsOutput,
+  formatModelIssues,
 } from "./commands/output";
 import {
   resolveSubagentOverrides,
@@ -44,6 +46,8 @@ import {
   assembleSystemPrompt,
 } from "./router/protocol";
 import { resolveEnforcementMode } from "./router/enforcement";
+import { normalizeCatalog, validateModels } from "./router/catalog";
+import type { Catalog } from "./router/catalog";
 import {
   createSessionStore,
   parseCapDirective,
@@ -261,6 +265,22 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   // subagent tracking, cap enforcement, and narration detection for the
   // current plugin lifetime (i.e., until OpenCode is restarted).
   let bypassed = false;
+
+  // Fetch and normalize opencode's live provider/model catalog. Best-effort:
+  // returns null when the client call fails, e.g. the server is not ready yet.
+  // The pure analysis (validateModels) lives in src/router/catalog.ts.
+  const fetchCatalog = async (): Promise<Catalog | null> => {
+    try {
+      const res: any = await ctx.client.config.providers();
+      return normalizeCatalog(res?.data);
+    } catch {
+      return null;
+    }
+  };
+
+  // One-shot guard so the passive stale-model warning runs at most once per
+  // plugin lifetime; re-validate on demand with /router.
+  let catalogChecked = false;
 
   const enableDelegateTool =
     cfg.experimental?.verifiedDelegateTool === true ||
@@ -650,6 +670,30 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       if (sid && sessionStore.isSubagent(sid)) {
         trajectoryStore.ensure(sid, input?.agent ?? null);
       }
+
+      // Once per lifetime, warn in the plugin log when the active preset points
+      // at models opencode's catalog says are missing or deprecated. This is the
+      // whole point of the catalog: a bad model id otherwise fails silently on
+      // every subagent dispatch. Orchestrator sessions only, and never throws.
+      if (!catalogChecked && sid && !sessionStore.isSubagent(sid)) {
+        catalogChecked = true;
+        try {
+          const catalog = await fetchCatalog();
+          if (catalog) {
+            for (const it of validateModels(cfg, catalog)) {
+              const hint =
+                it.suggestions.length > 0
+                  ? ` — try ${it.suggestions.join(", ")}`
+                  : "";
+              console.warn(
+                `[model-router] @${it.tier} ${it.ref}: ${it.kind}${hint}`,
+              );
+            }
+          }
+        } catch {
+          // best-effort: never disrupt a real session
+        }
+      }
     },
 
     // -----------------------------------------------------------------------
@@ -1008,7 +1052,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       opencodeConfig.command["router"] = {
         template: "$ARGUMENTS",
         description:
-          "Model-router controls (e.g., /router enforce off|advisory|enforced, /router overrides)",
+          "Model-router controls (e.g., /router enforce off|advisory|enforced, /router overrides, /router models)",
       };
     },
 
@@ -1096,10 +1140,26 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         try {
           cfg = loadConfig();
         } catch {}
-        output.parts.push({
-          type: "text" as const,
-          text: buildRouterOutput(cfg, input.arguments ?? ""),
-        });
+        const args = (input.arguments ?? "").trim();
+        const parts = args.split(/\s+/).filter(Boolean);
+        const sub = (parts[0] ?? "").toLowerCase();
+        let text: string;
+        if (sub === "models") {
+          text = buildModelsOutput(await fetchCatalog(), parts.slice(1).join(" "));
+        } else {
+          text = buildRouterOutput(cfg, args);
+          // On the bare status view, surface stale or missing models inline.
+          if (sub === "") {
+            const catalog = await fetchCatalog();
+            if (catalog) {
+              const issues = validateModels(cfg, catalog);
+              if (issues.length > 0) {
+                text += "\n\n" + formatModelIssues(issues);
+              }
+            }
+          }
+        }
+        output.parts.push({ type: "text" as const, text });
       }
     },
   };

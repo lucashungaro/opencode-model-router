@@ -14,6 +14,7 @@
 import type { RouterConfig, TierConfig, ModeConfig } from "../router/config";
 import { getActiveTiers } from "../router/protocol";
 import { resolvePromptStyle } from "../router/prompts";
+import type { Catalog, ModelIssue } from "../router/catalog";
 
 /** Provider-specific agent options (thinking / reasoning) for a tier. */
 export function buildAgentOptions(tier: TierConfig): Record<string, unknown> {
@@ -242,6 +243,73 @@ export function buildRouterHelp(current: string): string {
     "Commands:",
     "- `/router enforce <off|advisory|enforced>` — set hard-block enforcement (persisted)",
     "- `/router overrides` — show the global + project override file paths and precedence",
+    "- `/router models [provider]` — list valid model ids from your configured providers",
     "- `/tiers`, `/preset`, `/budget`, `/bypass`, `/annotate-plan`",
   ].join("\n");
+}
+
+/**
+ * `/router models [provider]`. Takes the catalog the caller fetched, so a
+ * failed or unavailable fetch is a null here rather than an exception path.
+ */
+export function buildModelsOutput(catalog: Catalog | null, filter: string): string {
+  if (!catalog) {
+    return "Model catalog unavailable — could not query opencode's providers.";
+  }
+  if (catalog.providers.length === 0) {
+    return "No providers are configured/authenticated in opencode.";
+  }
+  const f = filter.trim().toLowerCase();
+  const providers = f
+    ? catalog.providers.filter((p) => p.id.toLowerCase() === f)
+    : catalog.providers;
+  if (providers.length === 0) {
+    return `No configured provider matches \`${filter.trim()}\`. Available: ${catalog.providers
+      .map((p) => p.id)
+      .join(", ")}.`;
+  }
+
+  const lines: string[] = ["# Model Router — available models", ""];
+  for (const p of providers) {
+    const name = p.name && p.name !== p.id ? ` (${p.name})` : "";
+    const def = p.defaultModel ? ` — default: \`${p.id}/${p.defaultModel}\`` : "";
+    lines.push(`## ${p.id}${name}${def}`);
+    const sorted = [...p.models].sort((a, b) => a.id.localeCompare(b.id));
+    if (sorted.length === 0) {
+      lines.push("- _(no models)_");
+    } else {
+      for (const m of sorted) {
+        const flag = m.status && m.status !== "active" ? ` _(${m.status})_` : "";
+        lines.push(`- \`${p.id}/${m.id}\`${flag}`);
+      }
+    }
+    lines.push("");
+  }
+  lines.push(
+    "Paste any id above into an overrides file (`/router overrides` shows where).",
+  );
+  return lines.join("\n");
+}
+
+/** Render model-validation issues for the active preset as a markdown block. */
+export function formatModelIssues(issues: ModelIssue[]): string {
+  const lines: string[] = ["⚠ **Model issues in the active preset:**"];
+  for (const it of issues) {
+    const what =
+      it.kind === "provider-unknown"
+        ? `provider \`${it.providerId}\` is not configured/authenticated`
+        : it.kind === "model-deprecated"
+          ? `\`${it.ref}\` is **deprecated**`
+          : `\`${it.ref}\` was not found`;
+    let line = `- @${it.tier}: ${what}.`;
+    if (it.suggestions.length > 0) {
+      line += ` Try: ${it.suggestions.map((s) => `\`${s}\``).join(", ")}.`;
+    }
+    lines.push(line);
+  }
+  lines.push(
+    "",
+    "Set a replacement in your overrides file (`/router overrides`), then re-run `/router`.",
+  );
+  return lines.join("\n");
 }
