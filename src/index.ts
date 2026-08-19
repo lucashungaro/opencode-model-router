@@ -697,8 +697,13 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                 it.suggestions.length > 0
                   ? ` — try ${it.suggestions.join(", ")}`
                   : "";
+              // Fallback issues are keyed by the chain's provider, not a tier.
+              const where =
+                it.scope === "fallback"
+                  ? `${it.tier}[${it.providerId}]`
+                  : `@${it.tier}`;
               console.warn(
-                `[model-router] @${it.tier} ${it.ref}: ${it.kind}${hint}`,
+                `[model-router] ${where} ${it.ref}: ${it.kind}${hint}`,
               );
             }
           }

@@ -371,4 +371,37 @@ describe("formatModelIssues", () => {
     expect(out).toContain("- @heavy:");
     expect(out).toContain("/router overrides");
   });
+
+  it("keys fallback issues by chain provider instead of tier", () => {
+    const out = formatModelIssues([
+      issue({
+        tier: "fallback.global",
+        scope: "fallback",
+        providerId: "openai",
+        ref: "openai",
+        kind: "fallback-provider-unknown",
+      }),
+    ]);
+    expect(out).toContain("- fallback.global[openai]:");
+    expect(out).toContain("is not configured/authenticated");
+    expect(out).toContain("can never fire");
+  });
+
+  it("explains a chain entry pointing at a preset that does not exist", () => {
+    const out = formatModelIssues([
+      issue({
+        tier: "fallback.presets.p",
+        scope: "fallback",
+        providerId: "anthropic",
+        ref: "anthropic → ghost",
+        kind: "fallback-preset-unknown",
+        chainTarget: "ghost",
+        suggestions: ["p"],
+      }),
+    ]);
+    expect(out).toContain("- fallback.presets.p[anthropic]:");
+    expect(out).toContain("`ghost` is not a defined preset");
+    expect(out).toContain("silently dropped");
+    expect(out).toContain("Try: `p`.");
+  });
 });

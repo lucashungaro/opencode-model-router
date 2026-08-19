@@ -177,6 +177,112 @@ describe("validateModels", () => {
   });
 });
 
+describe("validateModels — fallback chains", () => {
+  // A fallback chain is `providerId -> [presetName, ...]` (FallbackConfig), so
+  // what can rot is a provider the catalog does not know and a chain entry that
+  // names no real preset.
+  function cfgFb(
+    fallback: unknown,
+    over: { tiers?: Record<string, string>; presets?: string[] } = {},
+  ): RouterConfig {
+    const preset: Record<string, unknown> = {};
+    for (const [tier, model] of Object.entries(
+      over.tiers ?? { heavy: "anthropic/claude-opus-4-8" },
+    )) {
+      preset[tier] = { model };
+    }
+    const presets: Record<string, unknown> = { p: preset };
+    for (const extra of over.presets ?? []) presets[extra] = preset;
+    return {
+      activePreset: "p",
+      presets,
+      rules: [],
+      defaultTier: "heavy",
+      fallback,
+    } as unknown as RouterConfig;
+  }
+
+  it("flags a chain keyed by a provider the catalog does not know", () => {
+    const cfg = cfgFb({ global: { openai: ["p"] } });
+    const issues = validateModels(cfg, catalog);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.kind).toBe("fallback-provider-unknown");
+    expect(issues[0]!.scope).toBe("fallback");
+    expect(issues[0]!.providerId).toBe("openai");
+    expect(issues[0]!.tier).toBe("fallback.global");
+  });
+
+  it("flags a chain entry that names no defined preset, with suggestions", () => {
+    const cfg = cfgFb({ global: { anthropic: ["cheap", "pro"] } }, { presets: ["pro"] });
+    const issues = validateModels(cfg, catalog);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.kind).toBe("fallback-preset-unknown");
+    expect(issues[0]!.chainTarget).toBe("cheap");
+    expect(issues[0]!.ref).toBe("anthropic → cheap");
+    expect(issues[0]!.suggestions).toContain("p");
+  });
+
+  it("does not report the same unknown provider twice (tier then fallback)", () => {
+    const cfg = cfgFb(
+      { global: { openai: ["p"] } },
+      { tiers: { fast: "openai/gpt-5" } },
+    );
+    const issues = validateModels(cfg, catalog);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.scope).toBe("tier");
+    expect(issues[0]!.kind).toBe("provider-unknown");
+  });
+
+  it("prefers the active preset's fallback map over the global one", () => {
+    const cfg = cfgFb({
+      global: { anthropic: ["ghost-global"] },
+      presets: { p: { anthropic: ["ghost-preset"] } },
+    });
+    const issues = validateModels(cfg, catalog);
+    expect(issues.map((i) => i.chainTarget)).toEqual(["ghost-preset"]);
+    expect(issues[0]!.tier).toBe("fallback.presets.p");
+  });
+
+  it("ignores self-references, real presets, and malformed chain values", () => {
+    const cfg = cfgFb({
+      global: {
+        anthropic: ["p", "pro", 7, "", null],
+        "": ["ghost"],
+      },
+    }, { presets: ["pro"] });
+    expect(validateModels(cfg, catalog)).toEqual([]);
+  });
+
+  it("survives a non-array chain and a non-object fallback", () => {
+    expect(validateModels(cfgFb({ global: { anthropic: "pro" } }), catalog)).toEqual([]);
+    expect(validateModels(cfgFb(undefined), catalog)).toEqual([]);
+    expect(validateModels(cfgFb({}), catalog)).toEqual([]);
+  });
+
+  it("with an empty catalog: tier checks are skipped, config-only checks still run", () => {
+    const cfg = cfgFb(
+      { global: { openai: ["ghost"] } },
+      { tiers: { heavy: "anthropic/does-not-exist" } },
+    );
+    const issues = validateModels(cfg, { providers: [] });
+    // no tier issue (we could not see the catalog) and no unknown-provider
+    // issue either — but the preset name is a config fact, catalog or not
+    expect(issues.map((i) => i.kind)).toEqual(["fallback-preset-unknown"]);
+    expect(issues[0]!.chainTarget).toBe("ghost");
+  });
+
+  it("stays silent for a config without any fallback (no regression)", () => {
+    const cfg = cfgWith({ heavy: "anthropic/claude-opus-4-8" });
+    expect(validateModels(cfg, catalog)).toEqual([]);
+    expect(validateModels(cfg, { providers: [] })).toEqual([]);
+  });
+
+  it("tags tier issues with scope 'tier'", () => {
+    const cfg = cfgWith({ heavy: "anthropic/claude-opus-9-9" });
+    expect(validateModels(cfg, catalog)[0]!.scope).toBe("tier");
+  });
+});
+
 describe("findOrphanedStrongPatterns", () => {
   function strongCfg(
     models: Record<string, string>,

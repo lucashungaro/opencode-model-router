@@ -325,12 +325,20 @@ export function formatModelIssues(issues: ModelIssue[]): string {
   const lines: string[] = ["⚠ **Model issues in the active preset:**"];
   for (const it of issues) {
     const what =
-      it.kind === "provider-unknown"
-        ? `provider \`${it.providerId}\` is not configured/authenticated`
-        : it.kind === "model-deprecated"
-          ? `\`${it.ref}\` is **deprecated**`
-          : `\`${it.ref}\` was not found`;
-    let line = `- @${it.tier}: ${what}.`;
+      it.kind === "provider-unknown" || it.kind === "fallback-provider-unknown"
+        ? `provider \`${it.providerId}\` is not configured/authenticated` +
+          (it.kind === "fallback-provider-unknown"
+            ? " — this fallback chain can never fire"
+            : "")
+        : it.kind === "fallback-preset-unknown"
+          ? `chain entry \`${it.chainTarget}\` is not a defined preset and is silently dropped`
+          : it.kind === "model-deprecated"
+            ? `\`${it.ref}\` is **deprecated**`
+            : `\`${it.ref}\` was not found`;
+    // Fallback issues are keyed by the chain's provider, not by a tier.
+    const where =
+      it.scope === "fallback" ? `${it.tier}[${it.providerId}]` : `@${it.tier}`;
+    let line = `- ${where}: ${what}.`;
     if (it.suggestions.length > 0) {
       line += ` Try: ${it.suggestions.map((s) => `\`${s}\``).join(", ")}.`;
     }

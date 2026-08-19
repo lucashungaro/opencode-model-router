@@ -187,27 +187,142 @@ export function findOrphanedStrongPatterns(cfg: RouterConfig): string[] {
 export type ModelIssueKind =
   | "provider-unknown"
   | "model-missing"
-  | "model-deprecated";
+  | "model-deprecated"
+  | "fallback-provider-unknown"
+  | "fallback-preset-unknown";
 
 export interface ModelIssue {
+  /** Tier name for `scope: "tier"`; the fallback map key for `scope: "fallback"`. */
   tier: string;
-  /** Full `provider/model` reference from the config. */
+  /** Where the reference came from: an active-preset tier, or a fallback chain. */
+  scope: "tier" | "fallback";
+  /** Full `provider/model` reference for tier issues; the offending chain entry for fallback issues. */
   ref: string;
   providerId: string;
   modelId: string;
   kind: ModelIssueKind;
-  /** Suggested full `provider/model` references, closest first. */
+  /** Preset a fallback chain entry points at (`fallback-preset-unknown` only). */
+  chainTarget?: string;
+  /** Suggested replacements, closest first: `provider/model` refs for tier issues, preset names for fallback ones. */
   suggestions: string[];
 }
 
 /**
- * Validate the active preset's tier models against the live catalog. Returns an
- * empty list when the catalog is empty (fetch failed) — we never cry wolf about
- * missing models when we couldn't see the catalog at all.
+ * The fallback map that actually applies to the active preset, using the same
+ * precedence as `buildFallbackInstructions` in ./protocol: a non-empty
+ * preset-specific map wins over `fallback.global`.
+ */
+function activeFallbackMap(
+  cfg: RouterConfig,
+): { source: string; map: Record<string, unknown> } | undefined {
+  const fb = cfg.fallback;
+  if (!fb) return undefined;
+  const presetMap = fb.presets?.[cfg.activePreset];
+  if (presetMap && typeof presetMap === "object" && Object.keys(presetMap).length > 0) {
+    return { source: `presets.${cfg.activePreset}`, map: presetMap as Record<string, unknown> };
+  }
+  if (fb.global && typeof fb.global === "object" && Object.keys(fb.global).length > 0) {
+    return { source: "global", map: fb.global as Record<string, unknown> };
+  }
+  return undefined;
+}
+
+/**
+ * Validate the fallback chains that apply to the active preset. Report-only.
+ *
+ * NOTE ON SHAPE: a fallback chain is `providerId -> [presetName, ...]` (see
+ * FallbackConfig in ./config and `buildFallbackInstructions` in ./protocol) —
+ * it holds provider ids and PRESET names, not `provider/model` refs. So the two
+ * things that can silently rot are:
+ *  - a chain keyed by a provider opencode does not know about (catalog check:
+ *    the chain can never fire), and
+ *  - a chain entry naming a preset that does not exist, which ./protocol drops
+ *    from the rendered chain without a word (config check, no catalog needed).
+ *
+ * Dedupe: a provider already reported unknown from a tier model is not reported
+ * a second time from a fallback key — `knownBadProviders` carries those ids.
+ */
+function validateFallbackChains(
+  cfg: RouterConfig,
+  catalog: Catalog,
+  knownBadProviders: Set<string>,
+): ModelIssue[] {
+  const active = activeFallbackMap(cfg);
+  if (!active) return [];
+
+  const issues: ModelIssue[] = [];
+  const presetNames = Object.keys(cfg.presets ?? {});
+  const label = `fallback.${active.source}`;
+
+  for (const [providerId, chain] of Object.entries(active.map)) {
+    if (!providerId) continue;
+
+    if (
+      !isCatalogEmpty(catalog) &&
+      !findProvider(catalog, providerId) &&
+      !knownBadProviders.has(providerId)
+    ) {
+      knownBadProviders.add(providerId);
+      issues.push({
+        tier: label,
+        scope: "fallback",
+        ref: providerId,
+        providerId,
+        modelId: "",
+        kind: "fallback-provider-unknown",
+        suggestions: [],
+      });
+    }
+
+    if (!Array.isArray(chain)) continue;
+    for (const target of chain) {
+      if (typeof target !== "string" || target.length === 0) continue;
+      // ./protocol also drops a self-reference to the active preset, but that
+      // is a no-op by design rather than a typo, so it is not reported.
+      if (target === cfg.activePreset) continue;
+      if (Object.prototype.hasOwnProperty.call(cfg.presets ?? {}, target)) continue;
+      issues.push({
+        tier: label,
+        scope: "fallback",
+        ref: `${providerId} → ${target}`,
+        providerId,
+        modelId: "",
+        kind: "fallback-preset-unknown",
+        chainTarget: target,
+        suggestions: presetNames
+          .map((n) => ({ n, d: editDistance(target, n) }))
+          .sort((a, b) => a.d - b.d || a.n.localeCompare(b.n))
+          .slice(0, 3)
+          .map((x) => x.n),
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Validate the active preset's tier models — and the fallback chains that apply
+ * to it — against the live catalog. Catalog-dependent checks are skipped when
+ * the catalog is empty (fetch failed): we never cry wolf about missing models
+ * when we couldn't see the catalog at all. The fallback preset-name check is
+ * pure config analysis, so it still runs in that case.
  */
 export function validateModels(cfg: RouterConfig, catalog: Catalog): ModelIssue[] {
-  if (isCatalogEmpty(catalog)) return [];
+  const issues: ModelIssue[] = [];
+  const badProviders = new Set<string>();
+  if (!isCatalogEmpty(catalog)) {
+    issues.push(...validateTierModels(cfg, catalog, badProviders));
+  }
+  issues.push(...validateFallbackChains(cfg, catalog, badProviders));
+  return issues;
+}
 
+function validateTierModels(
+  cfg: RouterConfig,
+  catalog: Catalog,
+  badProviders: Set<string>,
+): ModelIssue[] {
   const issues: ModelIssue[] = [];
   const preset = getActiveTiers(cfg);
 
@@ -219,8 +334,10 @@ export function validateModels(cfg: RouterConfig, catalog: Catalog): ModelIssue[
 
     const provider = findProvider(catalog, parsed.providerId);
     if (!provider) {
+      badProviders.add(parsed.providerId);
       issues.push({
         tier,
+        scope: "tier",
         ref,
         providerId: parsed.providerId,
         modelId: parsed.modelId,
@@ -238,6 +355,7 @@ export function validateModels(cfg: RouterConfig, catalog: Catalog): ModelIssue[
         providerId: parsed.providerId,
         modelId: parsed.modelId,
         kind: "model-missing",
+        scope: "tier",
         suggestions: suggestModels(parsed.modelId, provider.models).map(
           (id) => `${parsed.providerId}/${id}`,
         ),
@@ -255,6 +373,7 @@ export function validateModels(cfg: RouterConfig, catalog: Catalog): ModelIssue[
         providerId: parsed.providerId,
         modelId: parsed.modelId,
         kind: "model-deprecated",
+        scope: "tier",
         suggestions: suggestModels(parsed.modelId, alternatives).map(
           (id) => `${parsed.providerId}/${id}`,
         ),
