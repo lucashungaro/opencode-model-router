@@ -58,7 +58,7 @@ import { access, readFile as fsReadFile } from "node:fs/promises";
 import { tool } from "@opencode-ai/plugin";
 import { scrubText } from "./guard/scrub";
 import { accept } from "./verify/gate";
-import { createMutexRegistry } from "./verify/deterministic";
+import { createVerificationWiring, extractAssistantText } from "./verify/wiring";
 import {
   createChangedFileStore,
   parseTaskResult,
@@ -205,120 +205,15 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   const guardStore = createGuardStore();
 
   const changedFileStore = createChangedFileStore();
-  const graderSessions = new Set<string>();
-
-  // Layer-2 real adapters (live-only; every call site is fail-closed).
-  const execSeam = (
-    command: string,
-    opts?: { cwd?: string; timeoutMs?: number },
-  ): Promise<{ code: number; stdout: string; stderr: string; timedOut: boolean }> =>
-    new Promise((resolve) => {
-      try {
-        nodeExec(
-          command,
-          {
-            cwd: opts?.cwd ?? ctx.directory,
-            timeout: opts?.timeoutMs ?? 120000,
-            maxBuffer: 10 * 1024 * 1024,
-            windowsHide: true,
-          },
-          (err: any, stdout: any, stderr: any) => {
-            const timedOut = !!(err && err.killed && err.signal === "SIGTERM");
-            const code =
-              err && typeof err.code === "number" ? err.code : err ? 1 : 0;
-            resolve({
-              code,
-              stdout: String(stdout ?? ""),
-              stderr: String(stderr ?? ""),
-              timedOut,
-            });
-          },
-        );
-      } catch {
-        resolve({ code: 1, stdout: "", stderr: "exec failed", timedOut: false });
-      }
+  // Layer-2's impure corner: exec, fs, and the opencode client, built once and
+  // read back through getConfig so a reloaded cfg (from /preset, /budget or
+  // /router enforce) applies to graded work too.
+  const { graderSessions, dispatchGrader, buildGateDeps, disposeChildSession } =
+    createVerificationWiring({
+      client: ctx.client,
+      directory: ctx.directory,
+      getConfig: () => cfg,
     });
-  const fsSeam = {
-    async fileExists(p: string): Promise<boolean> {
-      try {
-        await access(isAbsolute(p) ? p : join(ctx.directory, p));
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    async readFile(p: string): Promise<string> {
-      return await fsReadFile(isAbsolute(p) ? p : join(ctx.directory, p), "utf-8");
-    },
-  };
-  const verifyMutex = createMutexRegistry();
-  // Best-effort disposal of a plugin-created child session: abort any in-flight
-  // work, then delete it so it does not linger forever as a top-level session in
-  // the TUI. Fail-soft by contract — never throws, so it is safe to call from a
-  // finally without masking the original error.
-  const disposeChildSession = async (sid: string): Promise<void> => {
-    try {
-      await ctx.client.session.abort({ path: { id: sid } });
-    } catch {
-      // best-effort: the session may already have completed or been removed
-    }
-    try {
-      await ctx.client.session.delete({ path: { id: sid } });
-    } catch {
-      // best-effort: cleanup must never break the run
-    }
-  };
-
-  const dispatchGrader = async (
-    req: {
-      tier: string;
-      system: string;
-      prompt: string;
-    },
-    parentSessionID?: string,
-  ): Promise<{ sessionID: string; text: string }> => {
-    const created: any = await ctx.client.session.create({
-      body: { ...(parentSessionID ? { parentID: parentSessionID } : {}) },
-    });
-    const sid: string | undefined = created?.data?.id;
-    if (!sid) return { sessionID: "", text: "" };
-    graderSessions.add(sid);
-    try {
-      const model = tierModel(cfg, req.tier) ?? undefined;
-      const res: any = await ctx.client.session.prompt({
-        path: { id: sid },
-        body: {
-          ...(model ? { model } : {}),
-          system: req.system,
-          parts: [{ type: "text", text: req.prompt }],
-        },
-      });
-      const parts: any[] = res?.data?.parts ?? [];
-      const text = parts
-        .filter((p) => p?.type === "text" && typeof p.text === "string")
-        .map((p) => p.text)
-        .join("\n");
-      return { sessionID: sid, text };
-    } finally {
-      graderSessions.delete(sid);
-      await disposeChildSession(sid);
-    }
-  };
-  const buildGateDeps = (parentSessionID?: string) => ({
-    deterministic: {
-      exec: execSeam,
-      fs: fsSeam,
-      cwd: ctx.directory,
-      mutex: verifyMutex,
-    },
-    checker: {
-      dispatchGrader: (req: { tier: string; system: string; prompt: string }) =>
-        dispatchGrader(req, parentSessionID),
-      ladder: ["fast", "medium", "heavy"],
-      minGraderTier: cfg.enforcement?.verify?.minGraderTier ?? null,
-    },
-    require: cfg.enforcement?.verify?.require,
-  });
 
   // Best-effort, secret-free delegate scorecard dump (counts only).
   const dumpDelegateScorecard = (
@@ -409,16 +304,26 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
             let producerText = "";
             let forcing: string | null = null;
 
-            while (true) {
-              if (safety++ > safetyMax) {
-                return (
-                  `[router status: unmet] delegation stopped by the safety net after ` +
-                  `${state.totalAttempts} attempt(s).\n\n${scrubText(producerText)}`
-                );
-              }
-              const tier = state.currentTier;
-              const taskText = forcing
-                ? `${scrubText(forcing)}\n\n${args.task}`
+            /**
+             * One turn of the escalation ladder: create a producer session, run
+             * the task on it, put the result through the acceptance gate, then
+             * tear the session down. Returns null when the backend refused to
+             * create a session, the one failure the caller cannot retry.
+             *
+             * Split out because the loop is about when to *stop* — safety net,
+             * attempt accounting, tier advancement — and a ninety-line attempt
+             * in the middle of it obscured both halves.
+             */
+            const runProducerAttempt = async (
+              tier: string,
+              forcingNote: string | null,
+            ): Promise<{
+              sessionID: string;
+              text: string;
+              gateRes: Awaited<ReturnType<typeof accept>>;
+            } | null> => {
+              const taskText = forcingNote
+                ? `${scrubText(forcingNote)}\n\n${args.task}`
                 : args.task;
 
               const created: any = await ctx.client.session.create({
@@ -427,9 +332,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                 },
               });
               const producerSid: string | undefined = created?.data?.id;
-              if (!producerSid) {
-                return "[router] delegate failed: could not create a producer session.";
-              }
+              if (!producerSid) return null;
               producerSessions.push(producerSid);
               // Compose with Layer 1: guard the plugin-created producer session.
               try {
@@ -439,7 +342,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               }
 
               const model = tierModel(activeCfg, tier) ?? undefined;
-              producerText = "";
+              let producerText = "";
               // Provider-failover vs quality-escalation precedence (Phase 3.3):
               // Provider-failover is advisory only — a text chain injected into the orchestrator
               // system prompt (buildFallbackInstructions). It is orthogonal to this runtime ladder.
@@ -456,11 +359,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                     parts: [{ type: "text", text: taskText }],
                   },
                 });
-                const parts: any[] = res?.data?.parts ?? [];
-                producerText = parts
-                  .filter((p) => p?.type === "text" && typeof p.text === "string")
-                  .map((p) => p.text)
-                  .join("\n");
+                producerText = extractAssistantText(res);
               } catch {
                 producerText = "";
               }
@@ -507,6 +406,25 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               // Dispose this attempt's backend session before the next iteration
               // so a long ladder never accumulates live sessions.
               await disposeChildSession(producerSid);
+
+              return { sessionID: producerSid, text: producerText, gateRes };
+            };
+
+            while (true) {
+              if (safety++ > safetyMax) {
+                return (
+                  `[router status: unmet] delegation stopped by the safety net after ` +
+                  `${state.totalAttempts} attempt(s).\n\n${scrubText(producerText)}`
+                );
+              }
+              const tier = state.currentTier;
+              const attempt = await runProducerAttempt(tier, forcing);
+              if (!attempt) {
+                return "[router] delegate failed: could not create a producer session.";
+              }
+              producerText = attempt.text;
+              const producerSid = attempt.sessionID;
+              const gateRes = attempt.gateRes;
 
               const costRatio =
                 typeof tiersForCost?.[tier]?.costRatio === "number"
