@@ -471,6 +471,41 @@ describe("classifyTrivial", () => {
     ).toBe(false);
   });
 
+  // --- distributive breadth: "every"/"all" over a class of targets ---
+  // Bare fan-out phrasing with no comma, no connector, no second line, no named
+  // path and well under the length backstop. `each` and `for every` are already
+  // caught by the multi-step gate; these forms were the residual hole.
+
+  it("'every <collective>' => false (distributive gate)", () => {
+    expect(classifyTrivial("search every config file", "fast", fullCfg)).toBe(false);
+  });
+
+  it("'all <plural>' => false (distributive gate)", () => {
+    expect(
+      classifyTrivial("read all guard modules and tell me what they export", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("'all the <plural>' => false (distributive gate)", () => {
+    expect(classifyTrivial("grep all the tests for the handler", "fast", fullCfg)).toBe(false);
+  });
+
+  it("'every line of <file>' stays trivial (depth over ONE file, not breadth)", () => {
+    expect(classifyTrivial("read every line of package.json", "fast", fullCfg)).toBe(true);
+  });
+
+  it("'all of <path>' stays trivial (quantifier scopes a single named file)", () => {
+    expect(classifyTrivial("read all of src/index.ts", "fast", fullCfg)).toBe(true);
+  });
+
+  it("'all this' is not a plural target (stays trivial)", () => {
+    // "this" ends in `s` but is singular -- the generic plural branch must not
+    // treat it as a class of targets.
+    expect(
+      classifyTrivial("read all this and tell me what it means in tiers.json", "fast", fullCfg),
+    ).toBe(true);
+  });
+
   it("two-item comma phrase is not an enumeration (stays trivial)", () => {
     // Only 3+ items signal breadth; two items are common in single-shot asks and
     // a genuine two-file ask is already caught by the path count.

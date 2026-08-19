@@ -189,6 +189,28 @@ const ENUMERATION_RE =
   /[\w./-]+\s*,\s*[\w./-]+\s*(?:,\s*[\w./-]+|\b(?:and|or)\s+[\w./-]+)/i;
 
 /**
+ * Bare distributive phrasing — "summarize every config file", "list all guard
+ * modules" — describes breadth over a whole class of targets with none of the
+ * other breadth signals: no comma enumeration, no connector, no second
+ * imperative line, no named path, and well under the length backstop. It is
+ * still a fan-out, so it must not be trivial.
+ *
+ * `each` and `for every` are handled by `MULTI_STEP_RE`; this gate covers the
+ * remaining bare `every`/`all` forms. The quantifier only counts when it scopes
+ * a plural or collective TARGET class ("all guard modules", "every config
+ * file"), which is what keeps depth phrasing over ONE file trivial: in "read
+ * every line of package.json" and "read all of src/index.ts" the quantifier is
+ * partitive, so the intervening-word class refuses to cross `of`, and the head
+ * noun may not be followed by a file extension — otherwise `package` in
+ * `package.json` reads as a collective, since `.` is a word boundary. The
+ * generic plural branch carries a stop-list because English has many singular
+ * words ending in `s` — "what does all this mean in tiers.json" must stay a
+ * single-file lookup.
+ */
+const DISTRIBUTIVE_RE =
+  /\b(?:every|all)\s+(?:(?:the|these|those|other|remaining)\s+)?(?:(?!of\b)[a-z][a-z-]*\s+){0,2}(?:files?|modules?|tests?|configs?|dirs?|directory|directories|components?|routes?|stores?|handlers?|guards?|helpers?|scripts?|packages?|classes?|functions?|endpoints?|entries?|(?!(?:this|its|his|hers|thus|was|has|does|less|plus|yes|gas|bus|css|js|status|focus|process|access|address|business|class|success)\b)[a-z][a-z-]{2,}s)\b(?!\.[a-z])/i;
+
+/**
  * Lines that open with an imperative verb. Two or more of them is a task list
  * written as prose. Matched per line so the `Working directory:` / `Platform:` /
  * `Shell:` footer described below cannot inflate the count.
@@ -250,7 +272,8 @@ const MAX_TRIVIAL_CHARS = 240;
  *   5. it names at most `MAX_TRIVIAL_PATHS` distinct file paths, counting both
  *      extensioned paths and well-known extensionless files, and
  *   6. it carries no multi-step marker (`MULTI_STEP_RE`), no 3+ item
- *      enumeration (`ENUMERATION_RE`), and no second imperative line, and
+ *      enumeration (`ENUMERATION_RE`), no distributive breadth quantifier
+ *      (`DISTRIBUTIVE_RE`), and no second imperative line, and
  *   7. it is at most `MAX_TRIVIAL_CHARS` long.
  *
  * Clauses 5-7 are the narrowing. Without them ANY `fast` dispatch containing a
@@ -284,6 +307,7 @@ export function classifyTrivial(
   if (raw.length > MAX_TRIVIAL_CHARS) return false;
   if (MULTI_STEP_RE.test(raw)) return false;
   if (ENUMERATION_RE.test(raw)) return false;
+  if (DISTRIBUTIVE_RE.test(raw)) return false;
 
   const imperativeLines = raw
     .split(/\r?\n/)
