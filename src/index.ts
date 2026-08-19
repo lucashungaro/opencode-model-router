@@ -613,10 +613,26 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         // best-effort maintenance: never break a real turn
       }
       const tierNames = Object.keys(getActiveTiers(cfg));
-      sessionStore.registerFromChatMessage(input, output, cfg, tierNames);
+      const sid = input?.sessionID;
+      try {
+        const registration = sessionStore.registerFromChatMessage(
+          input,
+          output,
+          cfg,
+          tierNames,
+        );
+        // A same-session same-tier re-registration is a resumed dispatch
+        // (how an opencode task_id resume reaches this hook): start a new
+        // per-dispatch guard round and count it in telemetry.
+        if (registration.resumed === true && typeof sid === "string") {
+          guardStore.beginDispatch(sid);
+          trajectoryStore.recordResume(sid, input?.agent ?? null);
+        }
+      } catch {
+        // best-effort: never crash a real session during registration
+      }
 
       // Record-only: initialise a trajectory scorecard for tracked subagents.
-      const sid = input?.sessionID;
       if (sid && sessionStore.isSubagent(sid)) {
         trajectoryStore.ensure(sid, input?.agent ?? null);
       }
