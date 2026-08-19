@@ -18,7 +18,13 @@ import {
 // flag it closes over has to be hoisted alongside them. Every other path — the
 // bundled tiers.json included — delegates to the real implementation, so this is
 // inert for every other test in this file.
-const fsMock = vi.hoisted(() => ({ unreadablePath: null as string | null }));
+const fsMock = vi.hoisted(() => ({
+  unreadablePath: null as string | null,
+  // Maps a "symlinked" path to what realpathSync should resolve it to. Used by
+  // the $HOME boundary test: creating a real symlink needs elevated privileges
+  // on Windows, so the link is faked at the fs boundary instead of on disk.
+  realpaths: new Map<string, string>(),
+}));
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -34,6 +40,11 @@ vi.mock("node:fs", async (importOriginal) => {
         throw err;
       }
       return (actual.readFileSync as (...a: unknown[]) => unknown)(path, ...rest);
+    },
+    realpathSync: (path: unknown, ...rest: unknown[]) => {
+      const mapped = fsMock.realpaths.get(String(path));
+      if (mapped !== undefined) return mapped;
+      return (actual.realpathSync as (...a: unknown[]) => unknown)(path, ...rest);
     },
   };
 });
@@ -656,6 +667,31 @@ describe("findProjectOverride — walk boundaries", () => {
 
     process.chdir(pkg);
     expect(findProjectOverride()).toBe(realpathSync(file));
+  });
+
+  // The guard above compares cwd() against homedir(). cwd() returns a realpath
+  // and homedir() returns $HOME verbatim, so when $HOME is reached through a
+  // symlink the two never match and the boundary stops applying. The link is
+  // faked at the fs boundary rather than created on disk: symlinkSync needs
+  // elevated privileges on Windows, so a real one would assert nothing there.
+  it("never adopts ~/.opencode when $HOME is reached through a symlink", () => {
+    const realHome = join(tmpRoot, "real-home");
+    write(join(realHome, ".opencode", OVERRIDES), { defaultTier: "heavy" });
+    const linkedHome = join(tmpRoot, "linked-home");
+
+    // $HOME is the link; it resolves to the same directory cwd() sits under.
+    fsMock.realpaths.set(linkedHome, realpathSync(realHome));
+    process.env.HOME = linkedHome;
+    process.env.USERPROFILE = linkedHome;
+    const scratch = join(realHome, "scratch");
+    mkdirSync(scratch, { recursive: true });
+
+    process.chdir(scratch);
+    try {
+      expect(findProjectOverride()).toBeUndefined();
+    } finally {
+      fsMock.realpaths.clear();
+    }
   });
 
   it("never adopts ~/.opencode from an unrelated directory below home", () => {

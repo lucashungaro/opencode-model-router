@@ -694,6 +694,37 @@ When `antiNarration` is enabled, the detector runs for all models (not only Clau
 | `promptStyle` | string | `"prescriptive"`, `"goal-oriented"` or `"auto"` (default). Picks which default prompt the tier gets; ignored when `prompt` is set. |
 | `whenToUse` | string[] | Use cases (shown in `/tiers`, not in system prompt) |
 
+### Routing your own subagents (`subagentTiers`, opt-in)
+
+If you already have custom subagents (`.opencode/agents/**`), they do **not** get routed by default. An agent that declares no `model` inherits the model of whoever invoked it, usually your orchestrator, so a cheap read-only helper quietly runs at orchestrator prices.
+
+`subagentTiers` maps your agent names to tiers, and the plugin repoints them at the active preset's models:
+
+```jsonc
+{
+  "subagentTiers": {
+    "ContextScout": "fast",
+    "CodeReviewer": "medium",
+    "SecurityReviewer": "heavy"
+  }
+}
+```
+
+The point of doing this here rather than in `opencode.json` is that these agents then **follow `/preset`**. Switch to `openai` and `ContextScout` moves to that preset's fast model along with `@fast`. No model IDs live in your agent files, and a committed project overrides file gives the whole team the same routing.
+
+**Getting the names right.** The key is opencode's agent name: the frontmatter `name:` field when the agent declares one, otherwise the file's path-derived name (`agents/team/helper.md` becomes `team/helper`). Frontmatter wins, so an agent in `subagents/core/contextscout.md` with `name: ContextScout` is keyed `ContextScout`. Matching is case-sensitive.
+
+**Rules, all deliberate:**
+
+- **Opt-in.** No map, or an empty one, and nothing is touched.
+- **The map wins over the agent's own `model`.** This is the point, and it is what lets you delete hardcoded model IDs from agent files. If you want an agent to keep its pinned model, leave it out of the map.
+- **List subagents only.** Primary agents are the orchestrator, so pinning one to a tier defeats the routing. Agents already registered with a non-`subagent` mode are skipped, but a *markdown* agent's mode is not visible when the map is applied, so a primary agent listed there would still be repointed.
+- **Unknown tier names are skipped**, not fatal. A map written for a preset that defines a tier this one does not must never break startup.
+- **Tier names are never overwritten.** An entry keyed `fast`/`medium`/`heavy` is ignored so it cannot clobber the plugin's own agents.
+- **Variants are set explicitly.** If the target tier has no `variant`, any variant already on the agent is removed rather than inherited. An inherited variant from another provider fails at dispatch, not at load.
+
+Anything not listed is left exactly as opencode built it.
+
 ### Fallback
 
 Defines provider fallback order when a delegated task fails:

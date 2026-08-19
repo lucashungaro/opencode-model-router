@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`subagentTiers`, opt-in routing for your own subagents.** A map of agent name to
+  tier name repoints pre-existing custom subagents at the active preset's models, so
+  they follow `/preset` instead of pinning a model id in their own agent files. A
+  subagent that declares no `model` otherwise inherits the model of whoever invoked it,
+  which quietly runs cheap read-only helpers at orchestrator prices. Absent or empty
+  means no agent is touched.
+
 ### Fixed
 
 - **Enforced-mode hard blocks now apply to non-trivial `@fast` recon.** Trivial
