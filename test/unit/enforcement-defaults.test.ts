@@ -18,6 +18,12 @@ import {
   DEFAULT_ENV_GATE,
 } from "../../src/router/enforcement";
 import { buildDoDProtocolSection } from "../../src/router/protocol";
+import {
+  DEFAULT_DELEGATE_PROMPT_TIMEOUT_MS,
+  DEFAULT_GATE_BUDGET_MS,
+  DEFAULT_GRADER_PROMPT_TIMEOUT_MS,
+  timeoutMs,
+} from "../../src/verify/timeout";
 
 const TIERS_PATH = join(__dirname, "..", "..", "tiers.json");
 
@@ -158,6 +164,55 @@ describe("validateEnforcement — shipped keys are type-checked", () => {
       "no",
       /enforcement\.verify\.requireExplicitDoD must be a boolean/,
     ],
+    // A 0 or negative ceiling must be rejected, never read as "no timeout".
+    [
+      "verify",
+      "delegateTimeoutMs",
+      0,
+      /enforcement\.verify\.delegateTimeoutMs must be an integer >= 1/,
+    ],
+    [
+      "verify",
+      "delegateTimeoutMs",
+      -1,
+      /enforcement\.verify\.delegateTimeoutMs must be an integer >= 1/,
+    ],
+    [
+      "verify",
+      "delegateTimeoutMs",
+      1.5,
+      /enforcement\.verify\.delegateTimeoutMs must be an integer >= 1/,
+    ],
+    [
+      "verify",
+      "delegateTimeoutMs",
+      "600000",
+      /enforcement\.verify\.delegateTimeoutMs must be an integer >= 1/,
+    ],
+    [
+      "verify",
+      "graderTimeoutMs",
+      0,
+      /enforcement\.verify\.graderTimeoutMs must be an integer >= 1/,
+    ],
+    [
+      "verify",
+      "graderTimeoutMs",
+      -60000,
+      /enforcement\.verify\.graderTimeoutMs must be an integer >= 1/,
+    ],
+    [
+      "verify",
+      "gateBudgetMs",
+      0,
+      /enforcement\.verify\.gateBudgetMs must be an integer >= 1/,
+    ],
+    [
+      "verify",
+      "gateBudgetMs",
+      null,
+      /enforcement\.verify\.gateBudgetMs must be an integer >= 1/,
+    ],
     [
       "proportional",
       "trivialBypass",
@@ -186,6 +241,15 @@ describe("validateEnforcement — shipped keys are type-checked", () => {
     ).not.toThrow();
     expect(() =>
       validateConfig(withBadValue("proportional", "trivialBypass", false)),
+    ).not.toThrow();
+    expect(() =>
+      validateConfig(withBadValue("verify", "delegateTimeoutMs", 1)),
+    ).not.toThrow();
+    expect(() =>
+      validateConfig(withBadValue("verify", "graderTimeoutMs", 120000)),
+    ).not.toThrow();
+    expect(() =>
+      validateConfig(withBadValue("verify", "gateBudgetMs", 5000)),
     ).not.toThrow();
   });
 });
@@ -254,6 +318,31 @@ describe("tiers.json enforcement block — behaviour invariance", () => {
     expect(shipped.enforcement?.verify?.graderTemperature ?? 0).toBe(
       absent.enforcement?.verify?.graderTemperature ?? 0,
     );
+    // src/verify/timeout.ts: every ceiling resolves through timeoutMs(), so the
+    // shipped value must equal what an absent block already falls back to.
+    const ceilings: [number | undefined, number | undefined, number][] = [
+      [
+        shipped.enforcement?.verify?.delegateTimeoutMs,
+        absent.enforcement?.verify?.delegateTimeoutMs,
+        DEFAULT_DELEGATE_PROMPT_TIMEOUT_MS,
+      ],
+      [
+        shipped.enforcement?.verify?.graderTimeoutMs,
+        absent.enforcement?.verify?.graderTimeoutMs,
+        DEFAULT_GRADER_PROMPT_TIMEOUT_MS,
+      ],
+      [
+        shipped.enforcement?.verify?.gateBudgetMs,
+        absent.enforcement?.verify?.gateBudgetMs,
+        DEFAULT_GATE_BUDGET_MS,
+      ],
+    ];
+    for (const [shippedValue, absentValue, fallback] of ceilings) {
+      expect(timeoutMs(shippedValue, fallback)).toBe(
+        timeoutMs(absentValue, fallback),
+      );
+      expect(shippedValue).toBe(fallback);
+    }
   });
 
   it("resolves the same proportional trivial-bypass gate with and without the block", () => {

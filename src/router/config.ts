@@ -459,6 +459,24 @@ function validateEnforcement(obj: Record<string, unknown>): void {
           );
         }
       }
+      // Time-box ceilings. `>= 1` and not `>= 0`: a 0 or negative budget is
+      // almost always meant as "no timeout", and silently reading it as an
+      // immediately-expiring one would make every delegation fail. Reject it
+      // at the config boundary and say so, rather than guessing.
+      for (const key of [
+        "delegateTimeoutMs",
+        "graderTimeoutMs",
+        "gateBudgetMs",
+      ] as const) {
+        const value = verify[key];
+        if (value !== undefined) {
+          if (!Number.isInteger(value) || (value as number) < 1) {
+            throw new Error(
+              `tiers.json: enforcement.verify.${key} must be an integer >= 1 (milliseconds)`,
+            );
+          }
+        }
+      }
       if (
         verify.requireExplicitDoD !== undefined &&
         typeof verify.requireExplicitDoD !== "boolean"

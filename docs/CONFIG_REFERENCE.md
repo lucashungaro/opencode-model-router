@@ -45,8 +45,22 @@ The `enforcement` block in `tiers.json`. Every field is optional; each one falls
 | `graderPolicy` | `"atLeastProducerTier"` | `"atLeastProducerTier"` | **Only valid value.** Grader tier = `max(producerTier, minGraderTier)` along the ladder; never below the producer. A deterministic check uses no grader. |
 | `graderTemperature` | `number` | `0` | Applied via the `chat.params` hook to grader sessions only. |
 | `minGraderTier` | `string \| null` | `null` | Optional floor for the grader tier, independent of producer. `null` means no floor and is identical to omitting the key. |
+| `delegateTimeoutMs` | `integer ≥ 1` | `600000` (10 min) | Ceiling for **one** producer `session.prompt` turn in the `delegate` tool. Each ladder attempt gets its own budget. On expiry the child session is aborted and deleted, the attempt is recorded as failed with `producer failed: …`, and the ladder advances — the delegation never fabricates a pass. |
+| `graderTimeoutMs` | `integer ≥ 1` | `60000` (1 min) | Ceiling for **one** grader `session.prompt` turn. On expiry the grader session is aborted and deleted and verification fails closed; there is no "inconclusive, therefore accepted" path. |
+| `gateBudgetMs` | `integer ≥ 1` | `90000` (90 s) | Ceiling for the whole acceptance gate — deterministic checks plus the grader — for one attempt. On expiry any in-flight grader is aborted and the verdict is an honest `unmet`. |
 
 > **Note:** `graderPolicy: "atLeastProducerTier"` ensures a cheap producer is never graded by an even cheaper model. A deterministic DoD check (shell command, test run, lint) skips the grader entirely.
+
+> **Tuning the ceilings.** The 10-minute producer default is sized for a heavy-tier
+> task that reads a codebase and writes a non-trivial patch, and it applies **per
+> ladder attempt**, not per delegation. A genuinely long-running heavy task can
+> still hit it — a large migration, or a task whose subagent shells out to a slow
+> build. If that happens the symptom is unambiguous: `[router status: unmet]` with
+> `producer failed: delegate producer prompt timed out after 600000ms` in the
+> forcing note. Raise `delegateTimeoutMs` rather than removing the ceiling; `0` and
+> negative values are **rejected at load** precisely so that "no timeout" cannot be
+> requested by accident. `gateBudgetMs` bounds verification, not production, and
+> should stay well under `delegateTimeoutMs`.
 
 ---
 
@@ -113,6 +127,7 @@ Evaluated by `resolveEnforcementMode` on every dispatch.
 | `verify.minGraderTier` must be a string or `null`. |
 | `verify.graderTemperature` must be a number ≥ 0. |
 | `verify.requireExplicitDoD` must be a boolean. |
+| `verify.delegateTimeoutMs`, `verify.graderTimeoutMs` and `verify.gateBudgetMs` must each be an integer ≥ 1 (milliseconds). `0` and negatives are rejected, not read as "no timeout". |
 | `proportional.trivialBypass` must be a boolean. |
 
 An invalid value in the bundled `tiers.json` throws at load; the same value in an
@@ -141,6 +156,9 @@ pins this: it resolves the real policies from the shipped file and from the same
 | `verify.minGraderTier` | `null` | `src/verify/wiring.ts` |
 | `verify.graderTemperature` | `0` | `src/index.ts` (`chat.params` hook, grader sessions only) |
 | `verify.requireExplicitDoD` | `false` | `src/router/protocol.ts` |
+| `verify.delegateTimeoutMs` | `600000` | `src/index.ts` (`delegate` producer prompt) |
+| `verify.graderTimeoutMs` | `60000` | `src/verify/wiring.ts` (`dispatchGrader`) |
+| `verify.gateBudgetMs` | `90000` | `src/index.ts` (`accept()` call in `delegate`) |
 | `escalate.ladder` | `["fast","medium","heavy"]` | `src/escalate/ladder.ts` |
 | `escalate.floorTier` | `null` | `src/escalate/ladder.ts` |
 | `escalate.maxAttemptsPerTier` | `1` | `src/escalate/ladder.ts` |
