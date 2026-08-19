@@ -340,6 +340,37 @@ The plugin ships with four presets (switch with `/preset <name>`):
 | @medium | `google/gemini-2.5-pro` | 5x |
 | @heavy | `google/gemini-3-pro-preview` | 20x |
 
+**fable-effort** — one model, three reasoning depths (see [per-tier `effort`](#per-tier-effort)):
+| Tier | Model | Effort | Cost ratio |
+|------|-------|--------|-----------|
+| @fast | `anthropic/claude-fable-5` | `low` | 1x |
+| @medium | `anthropic/claude-fable-5` | `high` | 3x |
+| @heavy | `anthropic/claude-fable-5` | `xhigh` | 6x |
+
+Because the model string is identical across tiers, escalating a task keeps the prompt
+cache warm. The cost ratios are estimated token-spend multipliers, not price differences.
+
+### Per-tier `effort`
+
+Any tier may set `effort`: `low`, `medium`, `high`, `xhigh`, or `max`. Precedence,
+highest first:
+
+1. `thinking.budgetTokens` (Anthropic) / `reasoning.effort` (OpenAI) — the explicit,
+   provider-specific setting always wins, and a one-time warning names the tier.
+2. `effort`.
+
+**Unset means unset**: no `effort` (and no `reasoning_effort`) key is registered at all.
+
+| Model family | Registered as | Caveats |
+|---|---|---|
+| Anthropic | `options.effort`, incl. `xhigh`/`max` | Requires the `opencode-anthropic-fix` plugin (commit `307aea9`+ for fable/mythos). Non-adaptive Claude models (e.g. haiku) silently strip `effort` at the API layer, and without the plugin a top-level `effort` can break Claude-Code billing fingerprinting. |
+| OpenAI | `options.reasoning_effort` | Supports only `low`/`medium`/`high`; `xhigh` and `max` are downgraded to `high` with a warning. |
+| Other (Google, Copilot, …) | nothing | Dropped with a warning — no known mapping. |
+
+An out-of-set value in `tiers.json` fails validation at load; one that arrives any other
+way is ignored with a single warning. Full detail in
+[docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md#per-tier-effort).
+
 ### Routing modes
 
 Switch with `/budget <mode>`. Mode is persisted across restarts.

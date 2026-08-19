@@ -129,9 +129,57 @@ Evaluated by `resolveEnforcementMode` on every dispatch.
 | `verify.requireExplicitDoD` must be a boolean. |
 | `verify.delegateTimeoutMs`, `verify.graderTimeoutMs` and `verify.gateBudgetMs` must each be an integer ≥ 1 (milliseconds). `0` and negatives are rejected, not read as "no timeout". |
 | `proportional.trivialBypass` must be a boolean. |
+| A tier's `effort` (when present) must be one of `low \| medium \| high \| xhigh \| max`. Error: `tiers.json: preset '<preset>' tier '<tier>': effort must be one of low, medium, high, xhigh, max`. |
 
 An invalid value in the bundled `tiers.json` throws at load; the same value in an
 overrides file is reported via `console.warn` and that override layer is dropped.
+
+---
+
+## Per-tier `effort`
+
+`effort` is an optional, provider-agnostic tier field: one of `low`, `medium`, `high`,
+`xhigh`, `max`. It lets one preset run the *same model* at three different reasoning
+depths — that is what the bundled `fable-effort` preset does (`@fast`=`low`,
+`@medium`=`high`, `@heavy`=`xhigh`, all on `anthropic/claude-fable-5`), which keeps the
+prompt cache warm across tiers because the model string never changes.
+
+```jsonc
+{
+  "presets": {
+    "fable-effort": {
+      "fast": { "model": "anthropic/claude-fable-5", "effort": "low" }
+    }
+  }
+}
+```
+
+**When unset, nothing is registered.** The agent's `options` bag simply has no `effort`
+(and no `reasoning_effort`) key — there is no implicit default and no "normal" value
+written on your behalf.
+
+### Precedence
+
+Highest wins:
+
+1. `thinking.budgetTokens` (Anthropic) or `reasoning.effort` (OpenAI) — an explicit,
+   provider-specific setting always beats the generic one.
+2. `effort`.
+
+When both are set the explicit one is used and a one-time warning names the tier. Note
+that `reasoning.effort` is a *different field* from `effort`: it is the nested OpenAI
+knob (`low | medium | high` only) and it is also what `/tiers` renders.
+
+### Provider matrix
+
+| Model family | What is registered | Caveats |
+|---|---|---|
+| Anthropic (`isClaudeModel`) | `options.effort` verbatim, including `xhigh` and `max`. | Requires the `opencode-anthropic-fix` plugin (commit `307aea9`+ for fable/mythos). Non-adaptive Claude models (e.g. haiku) silently strip `effort` at the API layer, and without that plugin a top-level `effort` can break Claude-Code billing fingerprinting. |
+| OpenAI (`openai/…`, `gpt-…`, `o1`/`o3`/`o4`) | `options.reasoning_effort`. | `reasoning_effort` only supports `low`, `medium`, `high`. `xhigh` and `max` are **downgraded to `high`** with a one-time warning per tier+level. |
+| Anything else (Google, Copilot, …) | nothing. | `effort` is dropped with a one-time warning naming the model — the field has no known mapping there. |
+
+Warnings are emitted once per distinct problem (keyed by tier and, where it matters, by
+the offending value), because agent registration re-runs on every `config` hook.
 
 ---
 
