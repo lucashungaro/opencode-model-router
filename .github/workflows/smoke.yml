@@ -1,0 +1,111 @@
+name: smoke
+
+# Real-OpenCode smoke lane (test/smoke/**).
+#
+# This lane is NOT part of `test.yml`: every test here shells out to a real
+# `opencode run` against a live Anthropic model (~45s each, 185s per-test
+# vitest timeout), so it is too slow and too expensive to run per-push.
+# It runs weekly on a schedule and on demand via workflow_dispatch.
+#
+# SECRETLESS RUNS ARE GREEN BY DESIGN: the `gate` step below checks for the
+# ANTHROPIC_API_KEY secret and every later step is conditioned on it. Forks
+# and secretless checkouts get a green run with a ::notice, never a red one.
+#
+# ASSUMPTIONS THAT CANNOT BE PROVEN LOCALLY (first scheduled run is the proof):
+#   1. AUTH: opencode is assumed to pick up the Anthropic credential from the
+#      ANTHROPIC_API_KEY environment variable (no `opencode auth login` step).
+#      The smoke harness itself only spawns `opencode run ... --model
+#      anthropic/claude-haiku-4-5` and forwards process.env, so the env-var
+#      path is the only mechanism available to it. If the first run fails with
+#      an auth error, replace the env var with an `opencode auth` step.
+#   2. CLI PACKAGE: the CLI is assumed to publish as `opencode-ai` on npm. The
+#      repo never names the install package anywhere, so this is inferred.
+#   3. PLUGIN DISCOVERY: replicated from the dev host by writing a *global*
+#      config at ~/.config/opencode/opencode.json pointing at the checkout.
+#      A repo-root opencode.json would be unreliable here because
+#      test/smoke/layer2-gate.smoke.test.ts writes and then unlinks its own
+#      repo-root opencode.json, which would delete a repo-root config out from
+#      under whichever smoke file vitest runs next.
+
+on:
+  schedule:
+    # 07:17 UTC every Monday — off-peak, and off the hour to dodge the
+    # GitHub scheduler's top-of-hour congestion.
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never let a manual run overlap a scheduled one: these are live model calls.
+concurrency:
+  group: smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    # 2 smoke tests x ~45s live model call, plus install/npm ci overhead.
+    # 20min leaves ample headroom for a slow model day without hanging a runner.
+    timeout-minutes: 20
+    steps:
+      - name: Check for smoke credentials
+        id: gate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Smoke lane skipped::ANTHROPIC_API_KEY is not configured for this repository/fork, so the live smoke lane was skipped. This is expected on forks and is not a failure."
+          fi
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        if: steps.gate.outputs.enabled == 'true'
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        if: steps.gate.outputs.enabled == 'true'
+        run: npm ci
+
+      - name: Install opencode CLI
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          npm i -g opencode-ai@latest
+          opencode --version
+
+      - name: Point opencode at the checked-out plugin
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          mkdir -p "$HOME/.config/opencode"
+          cat > "$HOME/.config/opencode/opencode.json" <<EOF
+          {
+            "\$schema": "https://opencode.ai/config.json",
+            "plugin": ["$GITHUB_WORKSPACE/src/index.ts"]
+          }
+          EOF
+          cat "$HOME/.config/opencode/opencode.json"
+
+      - name: Run smoke lane
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # `npm run smoke` == cross-env RUN_OC_SMOKE=1 vitest run
+        #   --config vitest.smoke.config.ts test/smoke
+        # (the tests set MODEL_ROUTER_ENFORCE=1 themselves when spawning opencode)
+        run: npm run smoke
+
+      - name: Dump smoke evidence on failure
+        if: failure() && steps.gate.outputs.enabled == 'true'
+        run: |
+          for f in tmp/smoke/*.json; do
+            [ -e "$f" ] || continue
+            echo "===== $f (first 4000 bytes) ====="
+            head -c 4000 "$f"
+            echo
+          done

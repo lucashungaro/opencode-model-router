@@ -2,6 +2,16 @@
 
 Turns "the producer says it finished" into "the producer's output was objectively accepted" — producer ≠ grader; grader tier ≥ producer tier; one shared gate code path serves both wirings (GA-5).
 
+## Live smoke lane in CI
+
+The gated real-OpenCode smokes (`test/smoke/**`, run locally with `npm run smoke`) are excluded from the default `npm test` and from the per-push `test.yml` matrix — each one spawns a real `opencode run` against a live model.
+
+They run in their own workflow, `.github/workflows/smoke.yml`:
+
+- **Weekly**, on a schedule (Mondays, 07:17 UTC).
+- **On demand** — Actions → *smoke* → *Run workflow* (`workflow_dispatch`).
+- **Skips green without credentials.** The first step checks for the `ANTHROPIC_API_KEY` secret; if it is absent (forks, secretless checkouts) every later step is skipped and the run ends green with a `::notice`, never red.
+
 ## Definition of Done
 
 A DoD is an `[acceptance] ... [/acceptance]` block (alias `[dod] ... [/dod]`). **Both** the open and close tags are required (strict); a block missing either tag is silently ignored.
