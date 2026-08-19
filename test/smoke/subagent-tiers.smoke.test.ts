@@ -31,8 +31,14 @@ const AGENT = "SmokeScout";
 // if a preset refresh changes these, this test should fail and be updated,
 // because it is asserting the end-to-end mapping, not re-deriving it.
 const FAST_MODEL = { providerID: "anthropic", modelID: "claude-haiku-4-5" };
-const HEAVY_MODEL = { providerID: "anthropic", modelID: "claude-opus-5" };
-const HEAVY_VARIANT = "high";
+const HEAVY_MODEL = { providerID: "anthropic", modelID: "claude-opus-4-8" };
+const HEAVY_VARIANT = "max";
+
+// Each case shells out to a real opencode. The first one also pays process
+// cold-start, which exceeds vitest's 5s default on slower hosts (Windows CI
+// measured ~10s), so every case carries the spawn ceiling plus a margin —
+// same shape as guard-hardblock.smoke.ts.
+const SMOKE_TIMEOUT_MS = 125_000;
 
 let projectDir = "";
 let homeDir = "";
@@ -105,19 +111,19 @@ d("subagentTiers smoke", () => {
   it("leaves an unlisted agent untouched (opt-in)", () => {
     writeOverrides({});
     expect(debugAgent(AGENT).model ?? null).toBeNull();
-  });
+  }, SMOKE_TIMEOUT_MS);
 
   it("repoints a listed agent at the active preset's tier model", () => {
     writeOverrides({ subagentTiers: { [AGENT]: "fast" } });
     expect(debugAgent(AGENT).model).toEqual(FAST_MODEL);
-  });
+  }, SMOKE_TIMEOUT_MS);
 
   it("carries the tier's variant through", () => {
     writeOverrides({ subagentTiers: { [AGENT]: "heavy" } });
     const agent = debugAgent(AGENT);
     expect(agent.model).toEqual(HEAVY_MODEL);
     expect(agent.variant).toBe(HEAVY_VARIANT);
-  });
+  }, SMOKE_TIMEOUT_MS);
 
   it("clears a variant when moving to a tier that has none", () => {
     writeOverrides({ subagentTiers: { [AGENT]: "heavy" } });
@@ -127,15 +133,15 @@ d("subagentTiers smoke", () => {
     const agent = debugAgent(AGENT);
     expect(agent.model).toEqual(FAST_MODEL);
     expect(agent.variant ?? null).toBeNull();
-  });
+  }, SMOKE_TIMEOUT_MS);
 
   it("ignores an unknown tier name rather than failing startup", () => {
     writeOverrides({ subagentTiers: { [AGENT]: "no-such-tier" } });
     expect(debugAgent(AGENT).model ?? null).toBeNull();
-  });
+  }, SMOKE_TIMEOUT_MS);
 
   it("never clobbers the plugin's own tier agents", () => {
     writeOverrides({ subagentTiers: { fast: "heavy" } });
     expect(debugAgent("fast").model).toEqual(FAST_MODEL);
-  });
+  }, SMOKE_TIMEOUT_MS);
 });
