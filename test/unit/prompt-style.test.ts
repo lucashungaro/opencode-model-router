@@ -224,7 +224,7 @@ describe("goal-oriented prompt contracts", () => {
   test.each([
     ["fast", 1959, 1117],
     ["medium", 2221, 1482],
-    ["heavy", 2408, 1464],
+    ["heavy", 2408, 1547],
   ] as const)(
     "%s prescriptive/goal-oriented character counts are pinned",
     (tier, prescriptiveLength, goalOrientedLength) => {

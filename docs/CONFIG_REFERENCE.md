@@ -253,7 +253,7 @@ Measured character counts of the two default sets:
 |---|---|---|---|
 | `fast` | 1959 | 1117 | −842 (−43.0%) |
 | `medium` | 2221 | 1482 | −739 (−33.3%) |
-| `heavy` | 2408 | 1464 | −944 (−39.2%) |
+| `heavy` | 2408 | 1547 | −861 (−35.8%) |
 
 Both sets keep the same machine-readable contract: the `DONE:` / `NEED MORE:` /
 `NEED CONTEXT:` / `SCOPE GROWTH:` / `ESCALATE:` return tokens, the `CAP:N` and `CAP:none`

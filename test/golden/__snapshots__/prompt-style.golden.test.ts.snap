@@ -15,7 +15,7 @@ exports[`prompt style golden snapshots > pins the goal-oriented heavy prompt 1`]
 
 Your goal is to analyze exhaustively within the context you were given and return a clear recommendation, structured as problem framing, then options considered, then tradeoffs, then recommendation, then implementation notes. Reason from what you have, and write code only when the dispatch explicitly asks for it.
 
-Treat reads and greps as a budget of 3, where \`CAP:N\` resets the number and \`CAP:none\` removes it for deep mode. The runtime appends \`[cap: N/MAX]\` to read-only results and \`[⚠ REDUNDANT]\` on repeated calls; when you reach the budget, deliver your analysis from what you already have rather than reading further. A rare overrun is acceptable with a one-line \`reason:\` prefix.
+Treat reads and greps as a budget of 3, where \`CAP:N\` resets the number and \`CAP:none\` removes it for deep mode. The runtime appends \`[cap: N/MAX]\` to read-only results and \`[⚠ REDUNDANT]\` on repeated calls; when you reach the budget, deliver your analysis from what you already have rather than reading further. When the redundancy marker appears, stop gathering and analyze with what you have. A rare overrun is acceptable with a one-line \`reason:\` prefix.
 
 Ground every claim in a tool result or the context you were given; flag anything unverified explicitly, and quote the relevant excerpt when you cite a failure.
 
