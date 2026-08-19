@@ -1,6 +1,35 @@
 {
   "activePreset": "anthropic",
   "activeMode": "normal",
+  "enforcement": {
+    "mode": "advisory",
+    "envGate": "MODEL_ROUTER_ENFORCE",
+    "guard": {
+      "budget": 25,
+      "readDraftCap": 3,
+      "sameOpRetryCap": 1,
+      "blockSelfScript": true,
+      "deliverableFirst": true,
+      "blockScriptWrites": false
+    },
+    "verify": {
+      "minGraderTier": null,
+      "graderTemperature": 0,
+      "requireExplicitDoD": false
+    },
+    "escalate": {
+      "ladder": ["fast", "medium", "heavy"],
+      "floorTier": null,
+      "maxAttemptsPerTier": 1,
+      "maxTotalAttempts": 4,
+      "costCeiling": {
+        "multiple": 4
+      }
+    },
+    "proportional": {
+      "trivialBypass": true
+    }
+  },
   "tierCaps": {
     "fast": 8,
     "medium": 5,
