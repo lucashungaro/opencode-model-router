@@ -263,6 +263,12 @@ describe("validateModels — fallback chains", () => {
     expect(validateModels(cfgFb({}), catalog)).toEqual([]);
   });
 
+  it("skips a non-array chain entirely, like ./protocol does", () => {
+    // ./protocol drops the whole entry, so there is no chain left to warn
+    // about — not even for the unknown provider keying it
+    expect(validateModels(cfgFb({ global: { openai: "p" } }), catalog)).toEqual([]);
+  });
+
   it("with an empty catalog: tier checks are skipped, config-only checks still run", () => {
     const cfg = cfgFb(
       { global: { openai: ["ghost"] } },
