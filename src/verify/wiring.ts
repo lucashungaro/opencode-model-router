@@ -75,6 +75,8 @@ export function createVerificationWiring(deps: {
 }): VerificationWiring {
   const { client, directory, getConfig } = deps;
   const graderSessions = new Set<string>();
+  /** Child sessions already torn down; see disposeChildSession. */
+  const disposed = new Set<string>();
   const mutex = createMutexRegistry();
 
   const execSeam = (
@@ -127,6 +129,14 @@ export function createVerificationWiring(deps: {
   // the TUI. Fail-soft by contract — never throws, so it is safe to call from a
   // finally without masking the original error.
   const disposeChildSession = async (sid: string): Promise<void> => {
+    // Idempotent, not merely fail-soft. Several paths legitimately dispose the
+    // same session — the per-attempt teardown in the delegate ladder and the
+    // end-of-execute safety net both do, and a timeout racing a late completion
+    // can too. Re-issuing abort+delete was harmless but not free, and it made
+    // "disposed exactly once" unassertable, which is precisely the property the
+    // time-box work has to be able to prove.
+    if (disposed.has(sid)) return;
+    disposed.add(sid);
     try {
       await client.session.abort({ path: { id: sid } });
     } catch {
