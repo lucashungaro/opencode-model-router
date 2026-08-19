@@ -139,6 +139,9 @@ describe("router-command — model catalog", () => {
                 name: "Anthropic",
                 models: {
                   "claude-haiku-4-5": { id: "claude-haiku-4-5", status: "active" },
+                  // separator drift against the default `opus-4-8` pattern, so
+                  // the orphan check has the near-miss evidence it now requires
+                  "claude-opus-4.8": { id: "claude-opus-4.8", status: "active" },
                 },
               },
             ],
@@ -243,9 +246,12 @@ describe("router-command — model catalog", () => {
       await h["chat.message"]({ sessionID: "s1" }, { parts: [] });
       const late = warnings();
       expect(late.some((m) => m.includes("model-missing"))).toBe(true);
-      // this mock catalog serves only claude-haiku-4-5, so the default
-      // strong-model patterns are genuinely dead in this environment
-      expect(late.some((m) => m.includes("strong-model pattern"))).toBe(true);
+      // this mock catalog serves claude-opus-4.8, so the default `opus-4-8`
+      // pattern is dead here WITH near-miss evidence — the one default-pattern
+      // case that is actionable, and therefore still reported
+      expect(late.some((m) => m.includes("strong-model pattern 'opus-4-8'"))).toBe(true);
+      // the other defaults have no near-miss and stay silent
+      expect(late.some((m) => m.includes("claude-mythos-5"))).toBe(false);
 
       // and it stays a one-shot: a third turn adds nothing
       const before = late.length;

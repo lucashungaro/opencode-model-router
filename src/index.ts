@@ -723,9 +723,9 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
             const catalog = deferredCatalog;
             if (catalog) {
               // Strong-model patterns matching nothing any configured provider
-              // serves: `auto` tiers that relied on them silently downgrade to
-              // the prescriptive prompt. Catalog-dependent, so it rides the same
-              // deferred path — it is NOT emitted on turn 1.
+              // serves, which can silently flip prompt-style resolution for
+              // tiers on auto. Catalog-dependent, so it rides the same deferred
+              // path — it is NOT emitted on turn 1.
               for (const p of findOrphanedStrongPatterns(cfg, catalog)) {
                 // Naming the served id turns "something is wrong" into a fix.
                 const near = findStrongPatternNearMisses(p, catalog);
@@ -734,7 +734,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                     ? ` — served under a different separator: ${near.slice(0, 3).join(", ")}`
                     : "";
                 console.warn(
-                  `[model-router] strong-model pattern '${p}' matches no model your providers serve — tiers on auto that relied on it fall back to prescriptive${hint}`,
+                  `[model-router] strong-model pattern '${p}' matches no model your providers serve — may silently change prompt-style resolution for tiers on auto${hint}`,
                 );
               }
               for (const it of validateModels(cfg, catalog)) {

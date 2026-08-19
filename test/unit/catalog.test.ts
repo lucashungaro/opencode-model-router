@@ -207,14 +207,30 @@ describe("validateModels — fallback chains", () => {
     } as unknown as RouterConfig;
   }
 
-  it("flags a chain keyed by a provider the catalog does not know", () => {
-    const cfg = cfgFb({ global: { openai: ["p"] } });
+  // Reported by a real user: the shipped tiers.json chains every provider to
+  // every other one, so an anthropic-only install warned about the dormant
+  // github-copilot chain on a preset that never names github-copilot. A chain
+  // keyed by a provider the active preset does not use is dormant by design.
+  it("says nothing about a chain keyed by a provider the active preset never uses", () => {
+    const cfg = cfgFb(
+      { global: { "github-copilot": ["p"], openai: ["p"] } },
+      { tiers: { fast: "anthropic/claude-haiku-4-5", heavy: "anthropic/claude-opus-4-8" } },
+    );
+    expect(validateModels(cfg, catalog)).toEqual([]);
+  });
+
+  it("reports an unknown provider the active preset actually uses, exactly once", () => {
+    // the tier check gets there first and records the provider, so the chain
+    // keyed by the same provider dedupes away instead of repeating it
+    const cfg = cfgFb(
+      { global: { "github-copilot": ["p"] } },
+      { tiers: { heavy: "github-copilot/gpt-5" } },
+    );
     const issues = validateModels(cfg, catalog);
     expect(issues).toHaveLength(1);
-    expect(issues[0]!.kind).toBe("fallback-provider-unknown");
-    expect(issues[0]!.scope).toBe("fallback");
-    expect(issues[0]!.providerId).toBe("openai");
-    expect(issues[0]!.tier).toBe("fallback.global");
+    expect(issues[0]!.scope).toBe("tier");
+    expect(issues[0]!.kind).toBe("provider-unknown");
+    expect(issues[0]!.providerId).toBe("github-copilot");
   });
 
   it("flags a chain entry that names no defined preset, with suggestions", () => {
@@ -335,6 +351,34 @@ describe("findOrphanedStrongPatterns", () => {
   const shippedCfg = validateConfig(
     JSON.parse(readFileSync(join(process.cwd(), "tiers.json"), "utf-8")),
   );
+
+  // Reported by a real user on the fable-effort preset with only anthropic
+  // configured: `claude-mythos-5` is simply a model that provider does not
+  // serve. No tier names it, nothing is served under a drifted separator, and
+  // no edit to the config would change anything — a default pattern with no
+  // near-miss is not actionable, so it must stay silent.
+  it("says nothing about a default pattern the providers merely do not serve", () => {
+    const anthropicOnly = catalogOf(
+      "anthropic/claude-fable-5",
+      "anthropic/claude-opus-4-8",
+      "anthropic/claude-sonnet-4-6",
+      "anthropic/claude-haiku-4-5",
+    );
+    expect(findStrongPatternNearMisses("claude-mythos-5", anthropicOnly)).toEqual([]);
+    expect(findOrphanedStrongPatterns(shippedCfg, anthropicOnly)).toEqual([]);
+  });
+
+  it("still reports a user-authored pattern with no near-miss at all", () => {
+    // an explicit list is a claim the user made about their own environment,
+    // so a dead entry in it is actionable whether or not we can suggest a fix
+    const cfg = strongCfg(
+      { heavy: "anthropic/claude-opus-4-8" },
+      { strong: ["ghost-model-9"] },
+    );
+    const cat = catalogOf("anthropic/claude-opus-4-8");
+    expect(findStrongPatternNearMisses("ghost-model-9", cat)).toEqual([]);
+    expect(findOrphanedStrongPatterns(cfg, cat)).toEqual(["ghost-model-9"]);
+  });
 
   it("says nothing for the shipped config against a healthy catalog", () => {
     const healthy = catalogOf(

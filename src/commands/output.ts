@@ -306,7 +306,7 @@ export function formatOrphanedStrongPatterns(
         .join(", ")}`;
     }),
     "",
-    "Any tier on `promptStyle: auto` that relied on one of these now resolves to the **prescriptive** prompt, silently. If a provider renamed a model, update `modelGenerations.strong` in your overrides file (`/router overrides`).",
+    "This may silently change prompt-style resolution for tiers on `promptStyle: auto`. If a provider renamed a model, update `modelGenerations.strong` in your overrides file (`/router overrides`).",
   ].join("\n");
 }
 

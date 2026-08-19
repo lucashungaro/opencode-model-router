@@ -184,7 +184,8 @@ export function findOrphanedStrongPatterns(
   }
   if (refs.length === 0) return [];
 
-  const raw = cfg.modelGenerations?.strong ?? DEFAULT_STRONG_MODEL_PATTERNS;
+  const configured = cfg.modelGenerations?.strong;
+  const raw = configured ?? DEFAULT_STRONG_MODEL_PATTERNS;
   const patterns = raw.filter(
     (p): p is string => typeof p === "string" && p.length > 0,
   );
@@ -192,7 +193,19 @@ export function findOrphanedStrongPatterns(
   const orphans = patterns.filter(
     (p) => !refs.some((r) => r.includes(p.toLowerCase())),
   );
-  return [...new Set(orphans)];
+
+  // Evidence gate for the defaults. A user-authored list is a claim about THIS
+  // environment, so a dead entry in it is actionable on its own. The default
+  // list is not a claim about anything — it is a cross-provider union we ship,
+  // so most of it is unserved on any given install and saying so is noise the
+  // user cannot act on. A default pattern is only worth reporting when a
+  // near-miss proves the model is there under a drifted separator
+  // (`opus-4-8` vs `opus-4.8`), which is the rename this check exists to catch.
+  const reportable =
+    configured === undefined
+      ? orphans.filter((p) => findStrongPatternNearMisses(p, catalog).length > 0)
+      : orphans;
+  return [...new Set(reportable)];
 }
 
 /**
@@ -295,6 +308,19 @@ function validateFallbackChains(
   const presetNames = Object.keys(cfg.presets ?? {});
   const label = `fallback.${active.source}`;
 
+  // Providers the active preset actually routes to. The shipped tiers.json
+  // chains every provider to every other one, so on a single-provider install
+  // most chains are dormant BY DESIGN — warning that a provider you never use
+  // is unconfigured is noise. A chain only matters once a tier can fail over
+  // from it.
+  const usedProviders = new Set<string>();
+  for (const tierCfg of Object.values(getActiveTiers(cfg) ?? {})) {
+    const ref = tierCfg?.model;
+    if (typeof ref !== "string") continue;
+    const parsed = parseModelRef(ref);
+    if (parsed) usedProviders.add(parsed.providerId);
+  }
+
   for (const [providerId, chain] of Object.entries(active.map)) {
     if (!providerId) continue;
     // ./protocol ignores a non-array chain wholesale, so there is nothing left
@@ -304,6 +330,7 @@ function validateFallbackChains(
 
     if (
       !isCatalogEmpty(catalog) &&
+      usedProviders.has(providerId) &&
       !findProvider(catalog, providerId) &&
       !knownBadProviders.has(providerId)
     ) {

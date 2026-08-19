@@ -303,9 +303,10 @@ describe("buildModelsOutput — orphaned strong patterns", () => {
     expect(out).toContain("`anthropic/opus-4.8`");
     expect(out).toContain("matching no model your providers serve");
     expect(out).toContain("- `opus-4-8`");
-    // honest scope: only the auto tiers that relied on that pattern downgrade
-    expect(out).toContain("Any tier on `promptStyle: auto` that relied on one of these");
-    expect(out).toContain("prescriptive");
+    // honest scope: a dead pattern *may* flip resolution — a tier whose model
+    // still contains the pattern keeps resolving goal-oriented
+    expect(out).toContain("may silently change prompt-style resolution");
+    expect(out).not.toContain("now resolves to the **prescriptive** prompt");
   });
 
   it("warns even when the catalog could not be fetched", () => {
