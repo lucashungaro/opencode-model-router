@@ -263,19 +263,19 @@ describe("validateConfig — enforcement.guard validation", () => {
 
   it("throws when guard.budget=0 (below minimum)", () => {
     expect(() => validateConfig(withEnf({ guard: { budget: 0 } }))).toThrow(
-      "enforcement.guard.budget must be a number >= 1",
+      "tiers.json: enforcement.guard.budget must be a number >= 1",
     );
   });
 
   it("throws when guard.budget is a string", () => {
     expect(() => validateConfig(withEnf({ guard: { budget: "x" } }))).toThrow(
-      "enforcement.guard.budget must be a number >= 1",
+      "tiers.json: enforcement.guard.budget must be a number >= 1",
     );
   });
 
   it("throws when guard.budget is Infinity", () => {
     expect(() => validateConfig(withEnf({ guard: { budget: Infinity } }))).toThrow(
-      "enforcement.guard.budget must be a number >= 1",
+      "tiers.json: enforcement.guard.budget must be a number >= 1",
     );
   });
 
@@ -294,7 +294,7 @@ describe("validateConfig — enforcement.guard validation", () => {
   it('throws when guard.blockScriptWrites="yes" (string, not boolean)', () => {
     expect(() =>
       validateConfig(withEnf({ guard: { blockScriptWrites: "yes" } })),
-    ).toThrow("enforcement.guard.blockScriptWrites must be a boolean");
+    ).toThrow("tiers.json: enforcement.guard.blockScriptWrites must be a boolean");
   });
 
   it("accepts guard absent — no validation performed", () => {

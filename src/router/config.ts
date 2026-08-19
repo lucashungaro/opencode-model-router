@@ -741,12 +741,14 @@ function validateEnforcement(obj: Record<string, unknown>): void {
           !Number.isFinite(guard.budget) ||
           guard.budget < 1
         ) {
-          throw new Error("enforcement.guard.budget must be a number >= 1");
+          throw new Error("tiers.json: enforcement.guard.budget must be a number >= 1");
         }
       }
       if (guard.blockScriptWrites !== undefined) {
         if (typeof guard.blockScriptWrites !== "boolean") {
-          throw new Error("enforcement.guard.blockScriptWrites must be a boolean");
+          throw new Error(
+            "tiers.json: enforcement.guard.blockScriptWrites must be a boolean",
+          );
         }
       }
       for (const key of ["readDraftCap", "sameOpRetryCap"] as const) {
