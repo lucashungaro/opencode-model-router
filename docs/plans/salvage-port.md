@@ -1,6 +1,6 @@
 # Plan: Salvage Port — Fable 5 Work into the Post-1.5.0 Line
 
-**Status:** ready to execute
+**Status:** COMPLETE — executed 2026-08-18, released as npm 1.6.0 (tag `v1.6.0`, SLSA/Trusted Publishing). Final commit range: `f55c46d..f89e752` (Waves 0–4; 55 commits incl. third-party merges #26/#27/#28). No phase abandoned. Deviations from spec recorded in phase QA: P6 unknown-style handling ships throw-at-load + runtime auto-rule degradation instead of the plan's warn+prescriptive fallback (stricter, internally consistent); P7's `task_id` framing was aspirational — resume is same-session same-tier re-registration, as salvaged. Rejected list fully honored (`activePreset` stays `anthropic`, mode stays `advisory`, no lessons/memory code). Residual QA findings filed as issue #30. `salvage-local-work` untouched. Suite 918 → 1200 tests / 61 files.
 **Author:** marco-jardim
 **Created:** 2026-08-18
 **Revised:** 2026-08-18 (post-review: reconnaissance wave, QA protocol, ownership enforcement, abandonment criteria)
