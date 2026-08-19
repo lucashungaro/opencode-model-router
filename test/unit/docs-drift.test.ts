@@ -36,7 +36,10 @@ describe("docs drift", () => {
     expect(undocumented).toEqual([]);
   });
 
-  it("quotes the measured prompt figures in README.md", () => {
+  // 30s timeout: this test recomputes the assembled prompts live, which can
+  // exceed the 5s default on a cold windows-latest runner (flaked in CI run
+  // 32212281722 with a hard timeout, passed on the immediate rerun).
+  it("quotes the measured prompt figures in README.md", { timeout: 30_000 }, () => {
     const readme = read("README.md");
 
     // Recomputed here rather than pinned to a literal, so that growing the
