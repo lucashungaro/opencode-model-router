@@ -90,6 +90,52 @@ describe("buildTiersOutput", () => {
     );
     expect(withReasoning).toContain("| reasoning: effort=low");
   });
+
+  // The auto rule silently flips strong models to goal-oriented; /tiers has to
+  // say so, otherwise the resolved style is invisible to the user.
+  it("shows the auto-resolved style as goal-oriented for a strong model", () => {
+    const out = buildTiersOutput(
+      cfg({ presets: { alpha: { heavy: { model: "anthropic/claude-opus-4-8" } } } } as never),
+    );
+    expect(out).toContain("| prompt: goal-oriented (auto)");
+  });
+
+  it("shows the auto-resolved style as prescriptive for a weak model", () => {
+    const out = buildTiersOutput(
+      cfg({ presets: { alpha: { fast: { model: "anthropic/claude-haiku-3" } } } } as never),
+    );
+    expect(out).toContain("| prompt: prescriptive (auto)");
+  });
+
+  it("marks an explicitly configured promptStyle as explicit", () => {
+    const out = buildTiersOutput(
+      cfg({
+        presets: {
+          alpha: {
+            heavy: { model: "anthropic/claude-opus-4-8", promptStyle: "prescriptive" },
+          },
+        },
+      } as never),
+    );
+    expect(out).toContain("| prompt: prescriptive (explicit)");
+    expect(out).not.toContain("(auto)");
+  });
+
+  // An explicit per-tier prompt bypasses style resolution entirely
+  // (src/index.ts: `tier.prompt ?? selectTierPrompt(...)`).
+  it("reports a per-tier prompt override as custom", () => {
+    const out = buildTiersOutput(
+      cfg({
+        presets: {
+          alpha: {
+            fast: { model: "p/fast-m", prompt: "bespoke", promptStyle: "goal-oriented" },
+          },
+        },
+      } as never),
+    );
+    expect(out).toContain("| prompt: custom");
+    expect(out).not.toContain("goal-oriented");
+  });
 });
 
 describe("preset renderers", () => {

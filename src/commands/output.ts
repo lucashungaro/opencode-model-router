@@ -13,6 +13,7 @@
  */
 import type { RouterConfig, TierConfig, ModeConfig } from "../router/config";
 import { getActiveTiers } from "../router/protocol";
+import { resolvePromptStyle } from "../router/prompts";
 
 /** Provider-specific agent options (thinking / reasoning) for a tier. */
 export function buildAgentOptions(tier: TierConfig): Record<string, unknown> {
@@ -52,7 +53,17 @@ export function buildTiersOutput(cfg: RouterConfig): string {
       : tier.reasoning
         ? ` | reasoning: effort=${tier.reasoning.effort}`
         : "";
-    lines.push(`## @${name} -> \`${tier.model}\`${thinkingStr}`);
+    // The auto rule flips strong models to goal-oriented silently, so show the
+    // style the dispatch actually resolves to. An explicit `tier.prompt` wins
+    // outright (src/index.ts: `tier.prompt ?? selectTierPrompt(...)`).
+    const explicitStyle =
+      tier.promptStyle === "prescriptive" || tier.promptStyle === "goal-oriented";
+    const promptStr = tier.prompt
+      ? " | prompt: custom"
+      : ` | prompt: ${resolvePromptStyle(tier.promptStyle, tier.model, cfg)} (${
+          explicitStyle ? "explicit" : "auto"
+        })`;
+    lines.push(`## @${name} -> \`${tier.model}\`${thinkingStr}${promptStr}`);
     if (tier.description) lines.push(tier.description);
     lines.push(`Steps: ${tier.steps ?? "default"}`);
     const whenToUse = tier.whenToUse ?? [];
