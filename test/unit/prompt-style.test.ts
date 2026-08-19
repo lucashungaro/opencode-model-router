@@ -222,9 +222,9 @@ describe("goal-oriented prompt contracts", () => {
   // Pins the measured size of the style switch. Update deliberately: a moving
   // delta means one of the two prompt sets changed.
   test.each([
-    ["fast", 1959, 1117],
-    ["medium", 2221, 1482],
-    ["heavy", 2408, 1547],
+    ["fast", 2072, 1165],
+    ["medium", 2337, 1530],
+    ["heavy", 2459, 1595],
   ] as const)(
     "%s prescriptive/goal-oriented character counts are pinned",
     (tier, prescriptiveLength, goalOrientedLength) => {

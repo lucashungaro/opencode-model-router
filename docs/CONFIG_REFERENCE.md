@@ -251,9 +251,9 @@ Measured character counts of the two default sets:
 
 | Tier | `prescriptive` | `goal-oriented` | Delta |
 |---|---|---|---|
-| `fast` | 1959 | 1117 | −842 (−43.0%) |
-| `medium` | 2221 | 1482 | −739 (−33.3%) |
-| `heavy` | 2408 | 1547 | −861 (−35.8%) |
+| `fast` | 2072 | 1165 | −907 (−43.8%) |
+| `medium` | 2337 | 1530 | −807 (−34.5%) |
+| `heavy` | 2459 | 1595 | −864 (−35.1%) |
 
 Both sets keep the same machine-readable contract: the `DONE:` / `NEED MORE:` /
 `NEED CONTEXT:` / `SCOPE GROWTH:` / `ESCALATE:` return tokens, the `CAP:N` and `CAP:none`
