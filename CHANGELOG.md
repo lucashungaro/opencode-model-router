@@ -5,6 +5,87 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-08-18
+
+Minor release: a salvage port of the features worth keeping from an abandoned branch —
+per-tier reasoning effort, goal-oriented prompts, session-resume accounting, time-boxes
+on every verification hop, and idle eviction for the delegation store. Routing behavior
+is unchanged unless you opt into the new keys.
+
+### Added
+
+- **Per-tier `effort`.** Each tier may declare a reasoning-effort level that is forwarded
+  to the provider on dispatch. The bundled `fable-effort` preset uses it to run all three
+  tiers on the same model at different effort levels, so the cost ladder comes from
+  reasoning depth rather than model size.
+- **Goal-oriented prompt styles.** `promptStyle` (`auto` | `rule-based` | `goal-oriented`),
+  `modelGenerations`, and `tierPromptsGoalOriented` let a tier ship a goal-oriented prompt
+  instead of the terse rule list. Under `auto` a tier switches to the goal-oriented text
+  when its model matches a declared newer generation; everything else keeps the rule-based
+  prompt.
+- **Session-resume accounting.** A resumed session no longer restarts its budget: the
+  cumulative ceiling carries across resumes, and registration now returns a `RegisterResult`
+  so callers can see whether a dispatch was newly counted or replayed.
+- **Time-boxes on delegate, grader, and gate.** `delegateTimeoutMs` (default 600000),
+  `graderTimeoutMs` (default 60000), and `gateBudgetMs` (default 90000) bound each hop.
+  They are fail-closed: a hop that runs out of budget is reported as unmet, never as
+  silently satisfied.
+- **Idle-TTL eviction for the delegation store.** Entries idle for more than an hour are
+  swept, throttled to at most one sweep every five minutes. The sweep is timer-less — it
+  piggybacks on store access — so it adds no background handles and nothing to unref in
+  tests.
+- **`cwd`-scoped verification.** A delegation may carry a `cwd`, which scopes the
+  deterministic file checks and the grader's session lookup to that directory.
+- **Evidence-grounding clauses in the medium and heavy tier prompts.** Subagents are told
+  to check each reported claim against a tool result from the same session and to say so
+  explicitly when a claim is unverified.
+- **An explicit `enforcement` block in `tiers.json`.** Every key is now written out at the
+  value that was previously the effective default, so the shipped behavior is unchanged and
+  readable rather than implicit. `validateEnforcement` type-checks every shipped key.
+
+### Changed
+
+- **`CAP:none` now requires a `reason:` line.** A dispatch that says `CAP:none` without a
+  `reason:` line in its text falls back to the tier's baseline cap instead of lifting it.
+  The protocol states this in two places (rule 7 and the per-dispatch paragraph), which is
+  the whole of this release's prompt growth: the routing protocol goes from 2,970 to 3,089
+  characters, and the Claude and enforcement paths grow by the same 119 characters. See the
+  token-overhead table in the README.
+- **Under `promptStyle: "auto"`, some bundled tiers switch to goal-oriented prompts.** Tiers
+  whose model is `claude-fable-5` or `claude-opus-4-8` — `anthropic.heavy`, `hybrid.heavy`,
+  and all three `fable-effort` tiers — now receive the goal-oriented text. Set
+  `promptStyle` to `rule-based` to keep the previous prompts.
+
+### Fixed
+
+- **Child-session disposal is idempotent.** Disposing a session that was already disposed
+  is a no-op instead of throwing.
+- **Gate-timeout aborts are scoped per delegation.** A gate that runs out of budget aborts
+  only its own delegation; concurrent delegations are no longer cancelled with it.
+- **`fileExists` reasons are honest about absolute paths.** The reason string reports the
+  path that was actually checked rather than the relative form that was passed in.
+- **No more orphan `lastTouch` entries.** Touch records are removed with their delegation
+  instead of accumulating for the lifetime of the process.
+
+### Deliberately not ported
+
+Four things from the source branch were left behind on purpose. The **lessons memory store**
+(~800 lines) has no measurement behind it — if it is revisited it must arrive opt-in and
+default-false rather than as a new always-on subsystem. The **anti-context-anxiety clause**,
+the **INTENT section**, and the **workspace-root line** would re-add the prose that [#21]
+deliberately removed. Flipping `activePreset` to `"opus"` would change the default for every
+user, and flipping `enforcement.mode` to `"enforced"` would turn an advisory layer into a
+blocking one; both stay as they are.
+
+### Credits
+
+Refactors [#26], [#27], and [#28] by Lucas Húngaro were merged while this port was in
+progress, and the ported code is built on top of them.
+
+[#26]: https://github.com/marco-jardim/opencode-model-router/pull/26
+[#27]: https://github.com/marco-jardim/opencode-model-router/pull/27
+[#28]: https://github.com/marco-jardim/opencode-model-router/pull/28
+
 ## [1.5.0] - 2026-08-18
 
 Minor release: update-safe configuration overrides, so customizations survive the plugin
