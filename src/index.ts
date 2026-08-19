@@ -628,6 +628,13 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
           guardStore.beginDispatch(sid);
           trajectoryStore.recordResume(sid, input?.agent ?? null);
         }
+        // KNOWN RESIDUAL: a fresh registration over an EXISTING session (same
+        // sessionID, different tier) resets session cap state but leaves guard
+        // state alone, so the guard keeps counting from the old dispatch. The
+        // desync can only make the guard stricter, never laxer, and opencode
+        // assigns one agent per subagent session — so this is documented in
+        // docs/CONFIG_REFERENCE.md rather than fixed by clearing guard state,
+        // which would also drop deliverable and fingerprint history.
       } catch {
         // best-effort: never crash a real session during registration
       }

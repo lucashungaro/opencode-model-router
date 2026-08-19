@@ -109,6 +109,41 @@ describe("createSessionStore — per-dispatch resume caps", () => {
     expect(banner).toContain("⚠ CUMULATIVE BUDGET EXCEEDED: 24/12 across 8 dispatches");
   });
 
+  it("never emits the cumulative line for a single-dispatch session, even when it overruns 3x its cap", () => {
+    const store = createSessionStore();
+    const sessionID = "ses_single_dispatch_overrun";
+
+    store.registerFromChatMessage(
+      { agent: "fast", sessionID },
+      dispatch("one dispatch only CAP:2"),
+      cfg,
+      tierNames,
+    );
+
+    // 10 reads on a cap of 2 — well past the 6 the ceiling would use. Banners
+    // are advisory, so an ignoring subagent can get here; the cumulative line
+    // is for RESUMES only and must stay silent.
+    let last = "";
+    for (let i = 1; i <= 10; i += 1) {
+      last = readCall(store, sessionID, `${i}.ts`);
+      expect(last).not.toContain("CUMULATIVE BUDGET EXCEEDED");
+      expect(last).not.toContain("across 1 dispatches");
+    }
+    expect(last).toContain("[cap: 10/2]");
+    expect(last).toContain("⚠ CAP REACHED (10/2)");
+
+    // The very first resume makes the accumulated overrun visible.
+    store.registerFromChatMessage(
+      { agent: "fast", sessionID },
+      dispatch("now resumed CAP:2"),
+      cfg,
+      tierNames,
+    );
+    expect(readCall(store, sessionID, "after-resume.ts")).toContain(
+      "⚠ CUMULATIVE BUDGET EXCEEDED: 11/6 across 2 dispatches",
+    );
+  });
+
   it("does not apply a cumulative ceiling when the current cap is CAP:none", () => {
     const store = createSessionStore();
     store.registerFromChatMessage(

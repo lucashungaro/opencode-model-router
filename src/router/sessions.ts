@@ -127,8 +127,18 @@ export function buildCapBanner(
     // Cumulative ceiling across resumed dispatches. Intentionally follows the
     // CURRENT dispatch cap: a tighter resumed cap makes the ceiling stricter,
     // so a resume can never buy more total budget than it declares.
+    //
+    // Gated on dispatches > 1: this ceiling exists to bound RESUMES. A single
+    // dispatch that blows past 3x its cap is already covered by CAP REACHED
+    // above, and firing here would both contradict "never-resumed sessions see
+    // no new banner text" and read absurdly ("across 1 dispatches").
+    //
+    // Threshold asymmetry with the guard layer is deliberate: this runs AFTER
+    // the call was counted (post-increment, so `>` = "the call that overran"),
+    // while guards.ts CLAUSE 3b runs BEFORE a call executes (pre-increment,
+    // so `>=` = "this call would overrun").
     const cumulativeCeiling = state.cap * CUMULATIVE_CAP_MULTIPLIER;
-    if (state.totalCalls > cumulativeCeiling) {
+    if (state.dispatches > 1 && state.totalCalls > cumulativeCeiling) {
       lines.push(
         `[⚠ CUMULATIVE BUDGET EXCEEDED: ${state.totalCalls}/${cumulativeCeiling} across ${state.dispatches} dispatches — return now]`,
       );
@@ -312,6 +322,14 @@ export function createSessionStore(options: SessionStoreOptions = {}) {
       // baseline — prompt rules alone are advisory; this is the deterministic
       // enforcer of "uncapped requires a stated reason". Numeric CAP:N is
       // unaffected.
+      //
+      // The regex matches `reason:` ANYWHERE in the dispatch text, not only on
+      // its own line. That is deliberate: this is a deterministic but
+      // advisory-grade gate whose job is to make an unjustified CAP:none the
+      // inconvenient path, not to adjudicate the quality of a justification.
+      // An orchestrator that wants to defeat it can, and that is fine — the
+      // config-derived guard budget, which never reads dispatch text, is the
+      // real backstop.
       const parsed = parseCapDirective(dispatchText);
       const override =
         parsed === "none" && !/\breason:/i.test(dispatchText) ? null : parsed;

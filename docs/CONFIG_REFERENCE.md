@@ -325,7 +325,27 @@ cannot bound it. Both layers therefore carry a cumulative ceiling derived from t
 Because the read-only ceiling follows the *current* cap, a tighter resumed cap makes the
 ceiling stricter — a resume can never buy more total budget than it declares. A `CAP:none`
 dispatch has no per-dispatch budget to derive from and therefore **no cumulative ceiling**
-(the redundancy check still applies).
+(the redundancy check still applies). The banner ceiling is also **not emitted for a session
+that has never been resumed**: a single dispatch that overruns is already covered by
+`CAP REACHED`, so non-resumers see no new banner text at all.
+
+#### Known limitations
+
+- **The banner ceiling is advisory and follows the *declared* cap.** It is derived from the
+  cap of the current dispatch, which comes from the dispatch text. An orchestrator that
+  resumes with a larger `CAP:N` raises its own ceiling, and `CAP:none` removes it. This is
+  not adversarial-proof, by design: banners inform a subagent, they do not block it. The
+  **guard layer is the backstop** — `guard.budget` and its `× 3` cumulative ceiling come from
+  config, never from dispatch text, and `cumulative_iteration_cap` genuinely blocks the tool
+  call in `enforced` mode.
+- **Residual: tier-switch re-registration does not reset guard state.** Re-registering the
+  same `sessionID` under a *different* tier gives the session store fresh cap state, but the
+  guard store keeps the previous state (its per-dispatch `toolCallCount` is not reset, and
+  the policy for the new tier is applied to the old counters). The desync errs strictly
+  toward over-strictness — the guard can only block sooner, never later — and the case is
+  theoretical, since opencode assigns one agent per subagent session. Accepted as a known
+  residual rather than fixed, because resetting guard state on a tier switch would also drop
+  deliverable/fingerprint history that the guard needs.
 
 ### If you never resume
 
