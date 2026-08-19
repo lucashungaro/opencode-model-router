@@ -46,7 +46,11 @@ import {
   assembleSystemPrompt,
 } from "./router/protocol";
 import { resolveEnforcementMode } from "./router/enforcement";
-import { normalizeCatalog, validateModels } from "./router/catalog";
+import {
+  findOrphanedStrongPatterns,
+  normalizeCatalog,
+  validateModels,
+} from "./router/catalog";
 import type { Catalog } from "./router/catalog";
 import {
   createSessionStore,
@@ -678,6 +682,14 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       if (!catalogChecked && sid && !sessionStore.isSubagent(sid)) {
         catalogChecked = true;
         try {
+          // Pure config analysis (no catalog needed): strong-model patterns
+          // that match nothing in the active preset silently downgrade `auto`
+          // tiers to the prescriptive prompt.
+          for (const p of findOrphanedStrongPatterns(cfg)) {
+            console.warn(
+              `[model-router] strong-model pattern '${p}' matches no model in preset '${cfg.activePreset}' — auto prompt style falls back to prescriptive`,
+            );
+          }
           const catalog = await fetchCatalog();
           if (catalog) {
             for (const it of validateModels(cfg, catalog)) {
@@ -1145,7 +1157,11 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         const sub = (parts[0] ?? "").toLowerCase();
         let text: string;
         if (sub === "models") {
-          text = buildModelsOutput(await fetchCatalog(), parts.slice(1).join(" "));
+          text = buildModelsOutput(
+            await fetchCatalog(),
+            parts.slice(1).join(" "),
+            findOrphanedStrongPatterns(cfg),
+          );
         } else {
           text = buildRouterOutput(cfg, args);
           // On the bare status view, surface stale or missing models inline.

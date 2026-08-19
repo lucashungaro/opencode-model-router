@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  findOrphanedStrongPatterns,
   normalizeCatalog,
   isCatalogEmpty,
   parseModelRef,
@@ -8,7 +9,8 @@ import {
   validateModels,
   type Catalog,
 } from "../../src/router/catalog";
-import type { RouterConfig } from "../../src/router/config";
+import { isStrongModel } from "../../src/router/prompts";
+import type { PromptStyle, RouterConfig } from "../../src/router/config";
 
 function cfgWith(models: Record<string, string>): RouterConfig {
   const fast = { model: models.fast, description: "", whenToUse: [] };
@@ -172,5 +174,96 @@ describe("validateModels", () => {
   it("never cries wolf when the catalog is empty (fetch failed)", () => {
     const cfg = cfgWith({ heavy: "anthropic/does-not-exist" });
     expect(validateModels(cfg, { providers: [] })).toEqual([]);
+  });
+});
+
+describe("findOrphanedStrongPatterns", () => {
+  function strongCfg(
+    models: Record<string, string>,
+    over: {
+      strong?: string[];
+      promptStyle?: Record<string, PromptStyle>;
+    } = {},
+  ): RouterConfig {
+    const preset: Record<string, unknown> = {};
+    for (const [tier, model] of Object.entries(models)) {
+      preset[tier] = { model, promptStyle: over.promptStyle?.[tier] };
+    }
+    return {
+      activePreset: "p",
+      presets: { p: preset },
+      rules: [],
+      defaultTier: "fast",
+      ...(over.strong ? { modelGenerations: { strong: over.strong } } : {}),
+    } as unknown as RouterConfig;
+  }
+
+  it("returns nothing when every pattern matches some tier model", () => {
+    const cfg = strongCfg(
+      {
+        fast: "anthropic/claude-haiku-4-5",
+        heavy: "anthropic/claude-opus-4-8",
+      },
+      { strong: ["opus-4-8", "HAIKU-4-5"] },
+    );
+    expect(findOrphanedStrongPatterns(cfg)).toEqual([]);
+  });
+
+  it("flags the provider-rename case that silently downgrades prompt style", () => {
+    // the rename `claude-opus-4-8` -> `opus-4.8` (dot) stops matching
+    const cfg = strongCfg(
+      { heavy: "anthropic/opus-4.8" },
+      { strong: ["claude-fable-5", "opus-4-8"] },
+    );
+    expect(findOrphanedStrongPatterns(cfg)).toEqual([
+      "claude-fable-5",
+      "opus-4-8",
+    ]);
+    // and the downgrade it warns about is real
+    expect(isStrongModel("anthropic/opus-4.8", cfg)).toBe(false);
+  });
+
+  it("matches case-insensitively, exactly like isStrongModel", () => {
+    const cfg = strongCfg(
+      { heavy: "anthropic/CLAUDE-Opus-4-8" },
+      { strong: ["opus-4-8"] },
+    );
+    expect(findOrphanedStrongPatterns(cfg)).toEqual([]);
+    expect(isStrongModel("anthropic/CLAUDE-Opus-4-8", cfg)).toBe(true);
+  });
+
+  it("falls back to the default pattern list when none is configured", () => {
+    const cfg = strongCfg({ fast: "openai/gpt-5" });
+    // DEFAULT_STRONG_MODEL_PATTERNS: claude-fable-5, claude-mythos-5, opus-4-8
+    expect(findOrphanedStrongPatterns(cfg)).toEqual([
+      "claude-fable-5",
+      "claude-mythos-5",
+      "opus-4-8",
+    ]);
+  });
+
+  it("stays silent when no tier resolves its prompt style by auto", () => {
+    const cfg = strongCfg(
+      { fast: "openai/gpt-5", heavy: "openai/gpt-5-pro" },
+      {
+        strong: ["opus-4-8"],
+        promptStyle: { fast: "prescriptive", heavy: "goal-oriented" },
+      },
+    );
+    expect(findOrphanedStrongPatterns(cfg)).toEqual([]);
+    // one tier back on auto is enough to make the orphan matter again
+    const auto = strongCfg(
+      { fast: "openai/gpt-5", heavy: "openai/gpt-5-pro" },
+      { strong: ["opus-4-8"], promptStyle: { fast: "prescriptive" } },
+    );
+    expect(findOrphanedStrongPatterns(auto)).toEqual(["opus-4-8"]);
+  });
+
+  it("ignores garbage entries and de-duplicates", () => {
+    const cfg = strongCfg(
+      { fast: "openai/gpt-5" },
+      { strong: ["opus-4-8", "opus-4-8", "", null as unknown as string] },
+    );
+    expect(findOrphanedStrongPatterns(cfg)).toEqual(["opus-4-8"]);
   });
 });

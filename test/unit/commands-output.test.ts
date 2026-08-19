@@ -314,6 +314,30 @@ describe("buildModelsOutput", () => {
   });
 });
 
+describe("buildModelsOutput — orphaned strong patterns", () => {
+  const catalog: Catalog = {
+    providers: [{ id: "anthropic", models: [{ id: "opus-4.8", status: "active" }] }],
+  };
+
+  it("appends the orphan warning to the model listing", () => {
+    const out = buildModelsOutput(catalog, "", ["opus-4-8"]);
+    expect(out).toContain("`anthropic/opus-4.8`");
+    expect(out).toContain("Strong-model patterns matching no model");
+    expect(out).toContain("- `opus-4-8`");
+    expect(out).toContain("prescriptive");
+  });
+
+  it("warns even when the catalog could not be fetched", () => {
+    const out = buildModelsOutput(null, "", ["opus-4-8"]);
+    expect(out).toContain("Model catalog unavailable");
+    expect(out).toContain("Strong-model patterns matching no model");
+  });
+
+  it("says nothing when there are no orphans", () => {
+    expect(buildModelsOutput(catalog, "")).not.toContain("Strong-model patterns");
+  });
+});
+
 describe("formatModelIssues", () => {
   const issue = (over: Partial<ModelIssue>): ModelIssue =>
     ({

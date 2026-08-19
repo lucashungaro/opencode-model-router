@@ -252,21 +252,36 @@ export function buildRouterHelp(current: string): string {
  * `/router models [provider]`. Takes the catalog the caller fetched, so a
  * failed or unavailable fetch is a null here rather than an exception path.
  */
-export function buildModelsOutput(catalog: Catalog | null, filter: string): string {
+export function buildModelsOutput(
+  catalog: Catalog | null,
+  filter: string,
+  orphanedStrongPatterns: string[] = [],
+): string {
+  // Orphan patterns are pure config analysis, so they are appended to EVERY
+  // return path — including the catalog-unavailable ones, where the warning is
+  // just as valid.
+  const suffix =
+    orphanedStrongPatterns.length > 0
+      ? "\n\n" + formatOrphanedStrongPatterns(orphanedStrongPatterns)
+      : "";
   if (!catalog) {
-    return "Model catalog unavailable — could not query opencode's providers.";
+    return (
+      "Model catalog unavailable — could not query opencode's providers." + suffix
+    );
   }
   if (catalog.providers.length === 0) {
-    return "No providers are configured/authenticated in opencode.";
+    return "No providers are configured/authenticated in opencode." + suffix;
   }
   const f = filter.trim().toLowerCase();
   const providers = f
     ? catalog.providers.filter((p) => p.id.toLowerCase() === f)
     : catalog.providers;
   if (providers.length === 0) {
-    return `No configured provider matches \`${filter.trim()}\`. Available: ${catalog.providers
-      .map((p) => p.id)
-      .join(", ")}.`;
+    return (
+      `No configured provider matches \`${filter.trim()}\`. Available: ${catalog.providers
+        .map((p) => p.id)
+        .join(", ")}.` + suffix
+    );
   }
 
   const lines: string[] = ["# Model Router — available models", ""];
@@ -288,7 +303,21 @@ export function buildModelsOutput(catalog: Catalog | null, filter: string): stri
   lines.push(
     "Paste any id above into an overrides file (`/router overrides` shows where).",
   );
-  return lines.join("\n");
+  return lines.join("\n") + suffix;
+}
+
+/**
+ * Render strong-model patterns that match no model in the active preset (see
+ * `findOrphanedStrongPatterns`). Report-only — the router never edits the
+ * user's pattern list.
+ */
+export function formatOrphanedStrongPatterns(patterns: string[]): string {
+  return [
+    "⚠ **Strong-model patterns matching no model in the active preset:**",
+    ...patterns.map((p) => `- \`${p}\``),
+    "",
+    "Tiers on `promptStyle: auto` therefore resolve to the **prescriptive** prompt. If a provider renamed a model, update `modelGenerations.strong` in your overrides file (`/router overrides`).",
+  ].join("\n");
 }
 
 /** Render model-validation issues for the active preset as a markdown block. */

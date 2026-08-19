@@ -5,7 +5,7 @@
 // raw payload is handed here for normalization and analysis.
 // ---------------------------------------------------------------------------
 
-import type { RouterConfig } from "./config";
+import { DEFAULT_STRONG_MODEL_PATTERNS, type RouterConfig } from "./config";
 import { getActiveTiers } from "./protocol";
 
 export interface CatalogModel {
@@ -138,6 +138,50 @@ export function suggestModels(
     .sort((a, b) => a.deprecated - b.deprecated || a.dist - b.dist || a.id.localeCompare(b.id))
     .slice(0, limit)
     .map((m) => m.id);
+}
+
+/**
+ * Strong-model patterns (`cfg.modelGenerations.strong`, else
+ * {@link DEFAULT_STRONG_MODEL_PATTERNS}) that match NO tier model of the active
+ * preset. Report-only: the router never rewrites the user's pattern list.
+ *
+ * Why this exists: prompt-style resolution is a case-insensitive substring match
+ * (`isStrongModel` in ./prompts). When a provider renames a model
+ * (`claude-opus-4-8` -> `opus-4.8`), every pattern that used to match silently
+ * stops matching, the tier drops back to the prescriptive prompt, and nothing
+ * anywhere errors. This surfaces that silence.
+ *
+ * Scope decision: patterns are compared against the ACTIVE PRESET's tier models
+ * only, never the whole catalog, because the active preset is what actually
+ * decides prompt style. That also makes this check catalog-independent (pure
+ * config analysis), so it still works when the catalog fetch failed.
+ *
+ * Gate: reported only when at least one active tier resolves its style by `auto`
+ * (`promptStyle` absent or `"auto"`). With every tier pinned to an explicit
+ * style the pattern list decides nothing, so an orphan there is harmless noise.
+ */
+export function findOrphanedStrongPatterns(cfg: RouterConfig): string[] {
+  const tiers = Object.values(getActiveTiers(cfg) ?? {});
+  const usesAuto = tiers.some(
+    (t) => t?.promptStyle === undefined || t.promptStyle === "auto",
+  );
+  if (!usesAuto) return [];
+
+  const models = tiers
+    .map((t) => t?.model)
+    .filter((m): m is string => typeof m === "string" && m.length > 0)
+    .map((m) => m.toLowerCase());
+  if (models.length === 0) return [];
+
+  const raw = cfg.modelGenerations?.strong ?? DEFAULT_STRONG_MODEL_PATTERNS;
+  const patterns = raw.filter(
+    (p): p is string => typeof p === "string" && p.length > 0,
+  );
+  // Same semantics as isStrongModel(): case-insensitive substring match.
+  const orphans = patterns.filter(
+    (p) => !models.some((m) => m.includes(p.toLowerCase())),
+  );
+  return [...new Set(orphans)];
 }
 
 export type ModelIssueKind =
