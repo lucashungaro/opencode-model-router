@@ -280,12 +280,19 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
             .describe(
               "Optional [acceptance]...[/acceptance] block defining the Definition of Done (check: / criteria: / deliverable: directives).",
             ),
+          cwd: tool.schema
+            .string()
+            .optional()
+            .describe(
+              "Optional working directory for the task. Verification is scoped to it: relative check paths resolve against it and the grader session runs in it.",
+            ),
         },
         async execute(
           args: {
             task: string;
             tier?: string;
             acceptance?: string;
+            cwd?: string;
           },
           toolCtx?: { sessionID?: string },
         ): Promise<string> {
@@ -425,7 +432,12 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                     }
                   : await withTimeout(
                       accept(
-                        { dod, trivial: false, mode: "modeA" },
+                        {
+                          dod,
+                          trivial: false,
+                          mode: "modeA",
+                          ...(args.cwd ? { cwd: args.cwd } : {}),
+                        },
                         artefact,
                         buildGateDeps(toolCtx?.sessionID),
                       ),
@@ -730,7 +742,17 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
             }
 
             const res = await accept(
-              { dod, trivial, mode: "modeA" },
+              {
+                dod,
+                trivial,
+                mode: "modeA",
+                // The built-in task tool declares no cwd of its own, but if a
+                // caller supplies one it scopes verification the same way the
+                // delegate tool's does.
+                ...(typeof input?.args?.cwd === "string" && input.args.cwd
+                  ? { cwd: input.args.cwd }
+                  : {}),
+              },
               artefact,
               buildGateDeps(),
             );

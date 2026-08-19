@@ -84,12 +84,24 @@ export function atLeastProducerTier(
 const GRADER_SYSTEM =
   'You are an independent, skeptical verification grader. You did NOT produce this work and have no stake in it. Evaluate ONLY whether the artefact satisfies EACH acceptance criterion below. For every criterion, cite concrete evidence from the artefact. If the evidence is missing, ambiguous, partial, or you are uncertain for ANY reason, you MUST fail that criterion. Default to FAIL. Do not give the benefit of the doubt. Output ONLY a single JSON object on one line: {"pass": boolean, "reasons": string[]}. Set pass=true ONLY if every criterion is satisfied with cited evidence; otherwise pass=false with a reason per failed criterion.';
 
+/**
+ * Make an attacker-influenced value safe to interpolate into a single prompt
+ * line. The working directory reaches us from a delegate tool argument, i.e.
+ * from model output, so it is untrusted text: scrubText strips secrets, and
+ * collapsing newlines and control characters stops a crafted path from ending
+ * the line and forging further instructions to the grader.
+ */
+function sanitizeOneLine(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  return scrubText(value).replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+}
+
 export function buildGradingPrompt(input: CheckerInput): { system: string; prompt: string } {
   const lines: string[] = [];
 
   if (input.workingDir) {
     lines.push(
-      `Producer working directory: ${input.workingDir}. Any file-existence or command claims MUST be verified against THIS directory, not your own session directory.`,
+      `Producer working directory: ${sanitizeOneLine(input.workingDir)}. Any file-existence or command claims MUST be verified against THIS directory, not your own session directory.`,
     );
     lines.push("");
   }

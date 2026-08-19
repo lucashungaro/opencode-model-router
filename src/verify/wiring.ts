@@ -25,18 +25,19 @@ import {
 } from "./timeout";
 import type { RouterConfig } from "../router/config";
 import type { GateDeps } from "./gate";
+// The grader request shape is owned by checker.ts, which builds it. Re-exported
+// here because this module is where it is consumed, and because keeping a
+// second local copy is exactly how `cwd` got dropped: the checker set it, the
+// wiring's narrower structural type silently discarded it, and the grader ran
+// against the router's directory while claiming to check the producer's.
+import type { GraderRequest } from "./checker";
+export type { GraderRequest };
 
 export interface ExecResult {
   code: number;
   stdout: string;
   stderr: string;
   timedOut: boolean;
-}
-
-export interface GraderRequest {
-  tier: string;
-  system: string;
-  prompt: string;
 }
 
 /**
@@ -142,8 +143,14 @@ export function createVerificationWiring(deps: {
     req: GraderRequest,
     parentSessionID?: string,
   ): Promise<{ sessionID: string; text: string }> => {
+    // Scope the grader session to the producer's working directory when one was
+    // declared. Naming the directory in the prompt is not enough: the grader
+    // has real tools, and an unscoped session resolves every read and command
+    // against the router's own cwd, so it would happily report "file not found"
+    // for work that exists exactly where it was asked for.
     const created: any = await client.session.create({
       body: { ...(parentSessionID ? { parentID: parentSessionID } : {}) },
+      ...(req.cwd ? { query: { directory: req.cwd } } : {}),
     });
     const sid: string | undefined = created?.data?.id;
     if (!sid) return { sessionID: "", text: "" };
