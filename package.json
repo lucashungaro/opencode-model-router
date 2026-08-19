@@ -41,7 +41,8 @@
     "src/",
     "tiers.json",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.0.0"
