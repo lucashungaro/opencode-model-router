@@ -114,6 +114,37 @@ describe("session-keyed store idle-TTL eviction", () => {
     expect(changedFiles.get("s1")).toEqual([{ path: "a.ts", status: "written" }]);
   });
 
+  it("survives the sweep when a long tool call refreshed the TTL at its start", () => {
+    // A tool call that outlives the TTL used to let a concurrent session's
+    // sweep evict the caller mid-call, after which recordToolCall's `!state`
+    // early return silently dropped cap enforcement for the rest of the
+    // session. touchIfTracked at tool.execute.before closes that window.
+    const { clock, sessions } = createStores();
+
+    registerSession(sessions, "s1");
+    clock.advance(59 * MINUTE_MS);
+
+    // tool.execute.before for a still-tracked session.
+    expect(sessions.touchIfTracked("s1")).toBe(true);
+
+    clock.advance(2 * MINUTE_MS);
+    sessions.sweep();
+
+    expect(sessions.isSubagent("s1")).toBe(true);
+    expect(sessions.getTier("s1")).not.toBeNull();
+  });
+
+  it("does not create a lastTouch entry for an untracked session", () => {
+    const { clock, sessions } = createStores();
+
+    // No registration: touchIfTracked must be a no-op, not an orphan entry.
+    expect(sessions.touchIfTracked("never-seen")).toBe(false);
+
+    clock.advance(61 * MINUTE_MS);
+    sessions.sweep();
+    expect(sessions.isSubagent("never-seen")).toBe(false);
+  });
+
   it("resumes after eviction as a fresh session", () => {
     const { clock, sessions } = createStores();
     const cfg = routerConfig();

@@ -84,6 +84,9 @@ export function atLeastProducerTier(
 const GRADER_SYSTEM =
   'You are an independent, skeptical verification grader. You did NOT produce this work and have no stake in it. Evaluate ONLY whether the artefact satisfies EACH acceptance criterion below. For every criterion, cite concrete evidence from the artefact. If the evidence is missing, ambiguous, partial, or you are uncertain for ANY reason, you MUST fail that criterion. Default to FAIL. Do not give the benefit of the doubt. Output ONLY a single JSON object on one line: {"pass": boolean, "reasons": string[]}. Set pass=true ONLY if every criterion is satisfied with cited evidence; otherwise pass=false with a reason per failed criterion.';
 
+/** Upper bound on the working-directory string interpolated into the prompt. */
+const MAX_WORKING_DIR_CHARS = 512;
+
 /**
  * Make an attacker-influenced value safe to interpolate into a single prompt
  * line. The working directory reaches us from a delegate tool argument, i.e.
@@ -92,8 +95,19 @@ const GRADER_SYSTEM =
  * the line and forging further instructions to the grader.
  */
 function sanitizeOneLine(value: string): string {
-  // eslint-disable-next-line no-control-regex
-  return scrubText(value).replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+  const cleaned = scrubText(value)
+    // C0 controls, DEL, the C1 block, and the Unicode LINE/PARAGRAPH
+    // SEPARATORS. U+2028 and U+2029 matter as much as \n here: plenty of
+    // renderers and tokenizers treat them as line breaks, so leaving them in
+    // would reopen the forged-instruction hole that stripping \n closes.
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
+    .trim();
+  // A path has no legitimate reason to be long, and an unbounded one lets a
+  // caller push the real criteria out of the grader's attention.
+  return cleaned.length > MAX_WORKING_DIR_CHARS
+    ? cleaned.slice(0, MAX_WORKING_DIR_CHARS) + "…(truncated)"
+    : cleaned;
 }
 
 export function buildGradingPrompt(input: CheckerInput): { system: string; prompt: string } {

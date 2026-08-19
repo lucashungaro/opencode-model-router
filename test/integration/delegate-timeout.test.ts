@@ -37,6 +37,8 @@ interface Recorder {
   deleted: string[];
   producerPrompts: number;
   graderPrompts: number;
+  /** Session ids that received a grader prompt, in dispatch order. */
+  graderSessionIds: string[];
 }
 
 function newRecorder(): Recorder {
@@ -46,6 +48,7 @@ function newRecorder(): Recorder {
     deleted: [],
     producerPrompts: 0,
     graderPrompts: 0,
+    graderSessionIds: [],
   };
 }
 
@@ -89,6 +92,7 @@ function makeCtx(
           // dispatchGrader always sets body.system; the producer never does.
           if (opts?.body?.system !== undefined) {
             rec.graderPrompts += 1;
+            rec.graderSessionIds.push(opts?.path?.id);
             return behaviour.grader
               ? behaviour.grader(rec.graderPrompts)
               : { data: { parts: [{ type: "text", text: '{"pass":true,"reasons":[]}' }] } };
@@ -378,6 +382,64 @@ describe("delegate time-boxes (fake timers)", () => {
   // -------------------------------------------------------------------------
   // Gate budget
   // -------------------------------------------------------------------------
+
+  it("aborts only its OWN graders when the gate budget expires", async () => {
+    // Two concurrent delegations sharing one plugin instance. A's gate runs out
+    // of budget while B's grader is healthy and mid-flight. A's abort must not
+    // reach B: the wiring-global graderSessions set holds both.
+    writeOverrides(dir, { gateBudgetMs: 2000, graderTimeoutMs: 600000 });
+    const rec = newRecorder();
+
+    // A's graders hang forever. B's grader answers 1500ms after it starts,
+    // which is inside B's own 2000ms gate budget but AFTER A's budget has
+    // already expired — the exact overlap where a wiring-global abort would
+    // take B down with A.
+    const hooks: any = await ModelRouterPlugin(
+      makeCtx(dir, rec, {
+        producer: () => Promise.resolve(textReply("producer output")),
+        // Call 2 is B's. Every other call belongs to A (which retries) and hangs.
+        grader: (call) =>
+          call === 2
+            ? new Promise((resolve) =>
+                setTimeout(() => resolve(textReply('{"pass":true,"reasons":[]}')), 1500),
+              )
+            : never(),
+      }) as any,
+    );
+
+    // t=0: A starts. Its gate budget expires at t=2000.
+    const a: Promise<string> = hooks.tool.delegate.execute({
+      task: "task A",
+      tier: "fast",
+      acceptance: ACCEPTANCE,
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // t=1000: B starts. Its gate expires at t=3000; its grader answers at 2500.
+    const b: Promise<string> = hooks.tool.delegate.execute({
+      task: "task B",
+      tier: "fast",
+      acceptance: ACCEPTANCE,
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    const bGraderSid = rec.graderSessionIds[1];
+    expect(bGraderSid).toBeTruthy();
+    expect(bGraderSid).not.toBe(rec.graderSessionIds[0]);
+
+    // t=2100: A's gate budget has blown; B's grader is still in flight.
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(rec.aborted).toContain(rec.graderSessionIds[0]); // A's own grader: yes
+    expect(rec.aborted).not.toContain(bGraderSid); // B's grader: untouched
+
+    // Let both delegations finish (A's ladder keeps timing out and gives up).
+    await vi.advanceTimersByTimeAsync(DEFAULT_DELEGATE_PROMPT_TIMEOUT_MS * 8);
+    const [resultA, resultB] = await Promise.all([a, b]);
+
+    expect(resultA).toContain("verification gate timed out after 2000ms");
+    // B was never collateral damage: it completed and was accepted.
+    expect(resultB).toContain("[router ✓ accepted:");
+    expect(resultB).not.toContain("timed out");
+  });
 
   it("returns an honest unmet when the whole gate exceeds its budget", async () => {
     writeOverrides(dir, { gateBudgetMs: 2000, graderTimeoutMs: 600000 });

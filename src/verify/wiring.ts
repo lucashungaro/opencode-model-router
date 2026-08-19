@@ -33,6 +33,13 @@ import type { GateDeps } from "./gate";
 import type { GraderRequest } from "./checker";
 export type { GraderRequest };
 
+/**
+ * Upper bound on the disposal memo. Far above the number of child sessions any
+ * one delegation can have in flight, and small enough that the memo can never
+ * become a meaningful retention for a long-lived plugin instance.
+ */
+export const DISPOSED_MEMO_MAX = 512;
+
 export interface ExecResult {
   code: number;
   stdout: string;
@@ -62,9 +69,18 @@ export interface VerificationWiring {
   dispatchGrader(
     req: GraderRequest,
     parentSessionID?: string,
+    inFlight?: Set<string>,
   ): Promise<{ sessionID: string; text: string }>;
-  /** Deps for the acceptance gate; graders are parented to parentSessionID. */
-  buildGateDeps(parentSessionID?: string): GateDeps;
+  /**
+   * Deps for the acceptance gate; graders are parented to parentSessionID.
+   *
+   * `inFlight`, when supplied, receives the id of every grader session this
+   * gate invocation currently has open, and loses it again the moment that
+   * grader finishes. A caller enforcing a gate budget aborts THAT set — never
+   * the wiring-global one, which belongs to every concurrent delegation at
+   * once.
+   */
+  buildGateDeps(parentSessionID?: string, inFlight?: Set<string>): GateDeps;
 }
 
 export function createVerificationWiring(deps: {
@@ -136,6 +152,19 @@ export function createVerificationWiring(deps: {
     // "disposed exactly once" unassertable, which is precisely the property the
     // time-box work has to be able to prove.
     if (disposed.has(sid)) return;
+    // Bounded: the memo only has to outlive the handful of callers that can
+    // race over one session (per-attempt teardown, the end-of-execute safety
+    // net, a timeout beaten by a late completion), all of which happen within a
+    // single delegate call. A plugin instance lives for the whole editor
+    // session, so an unbounded Set would be a slow leak. Insertion order is
+    // specified for Set, so dropping from the front evicts the oldest ids.
+    if (disposed.size >= DISPOSED_MEMO_MAX) {
+      let toDrop = disposed.size - DISPOSED_MEMO_MAX + 1;
+      for (const old of disposed) {
+        disposed.delete(old);
+        if (--toDrop <= 0) break;
+      }
+    }
     disposed.add(sid);
     try {
       await client.session.abort({ path: { id: sid } });
@@ -152,6 +181,7 @@ export function createVerificationWiring(deps: {
   const dispatchGrader = async (
     req: GraderRequest,
     parentSessionID?: string,
+    inFlight?: Set<string>,
   ): Promise<{ sessionID: string; text: string }> => {
     // Scope the grader session to the producer's working directory when one was
     // declared. Naming the directory in the prompt is not enough: the grader
@@ -165,6 +195,7 @@ export function createVerificationWiring(deps: {
     const sid: string | undefined = created?.data?.id;
     if (!sid) return { sessionID: "", text: "" };
     graderSessions.add(sid);
+    inFlight?.add(sid);
     try {
       const cfg = getConfig();
       const model = tierModel(cfg, req.tier) ?? undefined;
@@ -177,9 +208,11 @@ export function createVerificationWiring(deps: {
       // pass wearing a hedge.
       //
       // No abort is issued here: the finally below already calls
-      // disposeChildSession, which aborts before it deletes. Aborting twice
-      // would break the exactly-once disposal contract for no extra
-      // cancellation.
+      // disposeChildSession, which aborts before it deletes, so a second abort
+      // on this path would be a redundant round trip that cancels nothing extra.
+      // (The gate-budget path in index.ts does issue a raw abort, deliberately:
+      // it fires while this call is still suspended, before the finally has had
+      // a chance to run at all.)
       const res: any = await withTimeout(
         client.session.prompt({
           path: { id: sid },
@@ -198,11 +231,15 @@ export function createVerificationWiring(deps: {
       return { sessionID: sid, text: extractAssistantText(res) };
     } finally {
       graderSessions.delete(sid);
+      inFlight?.delete(sid);
       await disposeChildSession(sid);
     }
   };
 
-  const buildGateDeps = (parentSessionID?: string): GateDeps => {
+  const buildGateDeps = (
+    parentSessionID?: string,
+    inFlight?: Set<string>,
+  ): GateDeps => {
     const cfg = getConfig();
     return {
       deterministic: {
@@ -212,7 +249,8 @@ export function createVerificationWiring(deps: {
         mutex,
       },
       checker: {
-        dispatchGrader: (req: GraderRequest) => dispatchGrader(req, parentSessionID),
+        dispatchGrader: (req: GraderRequest) =>
+          dispatchGrader(req, parentSessionID, inFlight),
         ladder: ["fast", "medium", "heavy"],
         minGraderTier: cfg.enforcement?.verify?.minGraderTier ?? null,
       },

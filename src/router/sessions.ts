@@ -224,6 +224,22 @@ export function createSessionStore(options: SessionStoreOptions = {}) {
       evict(sessionID);
     },
 
+    /**
+     * Refresh a tracked session's idle stamp. Called when a tool call STARTS,
+     * so that a session whose single tool call outlives the TTL is not evicted
+     * mid-call by some other session's sweep — an eviction that would silently
+     * drop cap enforcement for the rest of that session, because recordToolCall
+     * returns early when the state is gone.
+     *
+     * Only touches sessions that are actually tracked. Touching unconditionally
+     * is what created orphan lastTouch entries in the first place.
+     */
+    touchIfTracked(sessionID: string): boolean {
+      if (!subagentCapState.has(sessionID)) return false;
+      touch(sessionID);
+      return true;
+    },
+
     /** Evict every session idle for >= ttlMs. Future stamps are never evicted. */
     sweep(nowMs: number = now(), ttlMs: number = DEFAULT_IDLE_TTL_MS): void {
       for (const [sessionID, stamp] of [...lastTouch.entries()]) {

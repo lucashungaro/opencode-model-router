@@ -284,7 +284,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
             .string()
             .optional()
             .describe(
-              "Optional working directory for the task. Verification is scoped to it: relative check paths resolve against it and the grader session runs in it.",
+              "Optional working directory used to VERIFY the result: relative check paths resolve against it and the grader session runs in it. It does NOT scope the producer subagent, so the task text must still tell the producer where to work.",
             ),
         },
         async execute(
@@ -418,6 +418,8 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                 activeCfg.enforcement?.verify?.gateBudgetMs,
                 DEFAULT_GATE_BUDGET_MS,
               );
+              // Grader sessions opened by THIS accept() call, and only those.
+              const gateGraderSessions = new Set<string>();
               let gateRes;
               try {
                 gateRes = producerError
@@ -439,7 +441,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                           ...(args.cwd ? { cwd: args.cwd } : {}),
                         },
                         artefact,
-                        buildGateDeps(toolCtx?.sessionID),
+                        buildGateDeps(toolCtx?.sessionID, gateGraderSessions),
                       ),
                       gateBudgetMs,
                       "verification gate",
@@ -449,8 +451,15 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                 // one thing worse than a slow verifier is a fast fabricated
                 // pass. Abort any grader still in flight so the ceiling is a
                 // real cancellation and not just a stopped wait.
+                //
+                // Scoped to THIS gate invocation's graders. The wiring-global
+                // graderSessions set is shared by every concurrent delegation,
+                // so aborting it here would kill a healthy grader belonging to
+                // someone else's delegation — reachable with the shipped
+                // config, where a deterministic check may run a command for up
+                // to 120s against a 90s gate budget.
                 if (error instanceof RouterTimeoutError) {
-                  for (const gsid of graderSessions) {
+                  for (const gsid of gateGraderSessions) {
                     try {
                       await ctx.client.session.abort({ path: { id: gsid } });
                     } catch {
@@ -624,6 +633,9 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       if (!sid || !sessionStore.isSubagent(sid) || typeof input?.tool !== "string") {
         return;
       }
+      // Start-of-call refresh: the idle TTL must cover the tool's runtime, not
+      // just the moment it finished.
+      sessionStore.touchIfTracked(sid);
       let res;
       try {
         res = guardBeforeCall({
