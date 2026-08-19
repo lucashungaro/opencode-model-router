@@ -48,6 +48,7 @@ import {
 import { resolveEnforcementMode } from "./router/enforcement";
 import {
   findOrphanedStrongPatterns,
+  findStrongPatternNearMisses,
   normalizeCatalog,
   validateModels,
 } from "./router/catalog";
@@ -726,8 +727,14 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               // the prescriptive prompt. Catalog-dependent, so it rides the same
               // deferred path — it is NOT emitted on turn 1.
               for (const p of findOrphanedStrongPatterns(cfg, catalog)) {
+                // Naming the served id turns "something is wrong" into a fix.
+                const near = findStrongPatternNearMisses(p, catalog);
+                const hint =
+                  near.length > 0
+                    ? ` — served under a different separator: ${near.slice(0, 3).join(", ")}`
+                    : "";
                 console.warn(
-                  `[model-router] strong-model pattern '${p}' matches no model your providers serve — tiers on auto that relied on it fall back to prescriptive`,
+                  `[model-router] strong-model pattern '${p}' matches no model your providers serve — tiers on auto that relied on it fall back to prescriptive${hint}`,
                 );
               }
               for (const it of validateModels(cfg, catalog)) {
@@ -1202,10 +1209,18 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         let text: string;
         if (sub === "models") {
           const catalog = await fetchCatalog();
+          const orphans = catalog ? findOrphanedStrongPatterns(cfg, catalog) : [];
+          const nearMisses: Record<string, string[]> = {};
+          if (catalog) {
+            for (const p of orphans) {
+              nearMisses[p] = findStrongPatternNearMisses(p, catalog);
+            }
+          }
           text = buildModelsOutput(
             catalog,
             parts.slice(1).join(" "),
-            catalog ? findOrphanedStrongPatterns(cfg, catalog) : [],
+            orphans,
+            nearMisses,
           );
         } else {
           text = buildRouterOutput(cfg, args);

@@ -195,6 +195,36 @@ export function findOrphanedStrongPatterns(
   return [...new Set(orphans)];
 }
 
+/**
+ * For an orphaned pattern, the served refs it would match if separators were
+ * ignored.
+ *
+ * `findOrphanedStrongPatterns` says a pattern is dead; this says why. The
+ * failure this exists for is separator drift, not a wrong name: `anthropic`
+ * ships `claude-opus-4-8` while the copilot preset uses `claude-opus-4.6`, so a
+ * provider moving between the two un-matches a pattern that is otherwise still
+ * describing the right model. Normalizing `.`, `-` and `_` away turns "this
+ * matches nothing" into "this matches nothing, but here is the model it almost
+ * certainly means", which is the difference between a warning and a fix.
+ *
+ * Returns empty when nothing plausibly matches, i.e. the pattern is simply
+ * wrong or the model is genuinely gone.
+ */
+export function findStrongPatternNearMisses(
+  pattern: string,
+  catalog: Catalog,
+): string[] {
+  const flatten = (v: string) => v.toLowerCase().replace(/[.\-_]/g, "");
+  const needle = flatten(pattern);
+  if (!needle) return [];
+
+  const refs: string[] = [];
+  for (const p of catalog.providers) {
+    for (const m of p.models) refs.push(`${p.id}/${m.id}`);
+  }
+  return refs.filter((r) => flatten(r).includes(needle));
+}
+
 export type ModelIssueKind =
   | "provider-unknown"
   | "model-missing"

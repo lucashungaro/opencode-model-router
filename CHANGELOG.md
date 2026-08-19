@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Near-miss reporting for orphaned strong-model patterns.** When a pattern matches
+  nothing served, `/router models` and the startup warning now name any served model
+  that matches once `.`, `-` and `_` are normalized away. The known failure is a
+  provider moving between separator styles rather than a wrong name, so this turns
+  "this matches nothing" into "this matches nothing, and here is the id it means".
+
 - **`subagentTiers`, opt-in routing for your own subagents.** A map of agent name to
   tier name repoints pre-existing custom subagents at the active preset's models, so
   they follow `/preset` instead of pinning a model id in their own agent files. A
@@ -24,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subagent dispatch.
 
 ### Fixed
+
+- Removed a stale `buildAgentOptions` from `src/commands/output.ts`. It was live when
+  the presentation layer was extracted, but `src/router/agent-options.ts` later became
+  the real implementation and gained `effort` handling. The orphan was reachable only
+  from its own test, and importing it by mistake would have silently dropped `effort`.
 
 - **`thinking.budgetTokens: 0` no longer swallows a tier's `effort`.** Behavior change:
   suppression used `budgetTokens != null` while emission required a truthy value, so a
