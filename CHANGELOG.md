@@ -16,8 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `enforced` → `advisory`. The `read_budget` guard could therefore never
   hard-block a `@fast` subagent — the precise runaway it exists to bound.
   `classifyTrivial` now additionally requires single-shot shape: at most one named
-  file path, no multi-step marker, and a length backstop. Genuine single-shot
-  lookups stay exempt, and real work was never trivial either way. Present since
+  file path (well-known extensionless files like `Makefile` or `LICENSE` count),
+  no multi-step marker (numbered or colon-numbered lists, sequencing words, `;`,
+  `&&`), no enumeration of three or more subjects, no multiple imperative lines,
+  and a length backstop. Genuine single-shot lookups stay exempt, and real work
+  was never trivial either way. Present since
   proportional enforcement landed (`80abf05`) and shipped in every release that
   included it. The `enforcement.proportional.trivialBypass` knob and its semantics
   are unchanged.
