@@ -112,6 +112,33 @@ gets any of them wrong.
 
 > **Note:** `trivialBypass` defaults `true` but trivial classification is tier-gated to `fast` and biased toward non-trivial. Real work is never silently downgraded.
 
+### What counts as "trivial"
+
+Trivial means a **single-shot lookup**, not merely "read-only". A dispatch is
+trivial only when *all* of the following hold (see `classifyTrivial` in
+`src/router/sessions.ts`):
+
+1. the dispatch tier is `fast` — `medium` / `heavy` is never trivial;
+2. the dispatch text is non-empty;
+3. it carries no `taskPatterns.medium` / `taskPatterns.heavy` signal;
+4. it matches a `taskPatterns.fast` stem (`read`, `search`, `grep`, …);
+5. it names **at most one** file path;
+6. it carries **no multi-step marker** — an ordered/bulleted list item, or one of
+   `then`, `one at a time`, `sequentially`, `in order`, `each`, `after that`,
+   `for every`;
+7. it is **at most 240 characters** long.
+
+So `read package.json and tell me the version` is trivial and is exempted from
+enforced-mode hard blocks, while `read README.md, then package.json, then
+src/index.ts, one at a time` is **not** — it is multi-file, sequenced recon, and
+stays fully enforced.
+
+> Clauses 5–7 were added to fix a bug in which *any* `fast` dispatch containing a
+> stem like `read` was trivial. That exempted multi-file recon from enforcement,
+> so the `read_budget` guard could never hard-block a `@fast` subagent — the exact
+> runaway it exists to bound. Setting `trivialBypass: false` disables the exemption
+> entirely; the knob's semantics are unchanged.
+
 ---
 
 ## Env-gate truth table

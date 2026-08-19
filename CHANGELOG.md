@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Enforced-mode hard blocks now apply to non-trivial `@fast` recon.** Trivial
+  classification exempted *any* `fast`-tier dispatch whose text matched a `fast`
+  taskPattern stem (`read`, `search`, `grep`, …) from enforcement, so a multi-file
+  recon dispatch was treated as "trivial" and `guardBeforeCall` downgraded
+  `enforced` → `advisory`. The `read_budget` guard could therefore never
+  hard-block a `@fast` subagent — the precise runaway it exists to bound.
+  `classifyTrivial` now additionally requires single-shot shape: at most one named
+  file path, no multi-step marker, and a length backstop. Genuine single-shot
+  lookups stay exempt, and real work was never trivial either way. Present since
+  proportional enforcement landed (`80abf05`) and shipped in every release that
+  included it. The `enforcement.proportional.trivialBypass` knob and its semantics
+  are unchanged.
+
 ## [1.6.0] - 2026-08-18
 
 Minor release: a salvage port of the features worth keeping from an abandoned branch —
