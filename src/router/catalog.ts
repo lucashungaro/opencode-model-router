@@ -328,6 +328,13 @@ function validateFallbackChains(
     // an unknown provider for a chain that could never fire anyway.
     if (!Array.isArray(chain)) continue;
 
+    // KEPT DELIBERATELY, THOUGH CURRENTLY UNREACHABLE via validateModels: the
+    // tier pass already reports every unknown provider a tier routes to, and it
+    // seeds knownBadProviders with exactly those ids — the same set
+    // usedProviders admits here. So the two guards below can never both hold on
+    // that path. This stays as a safety net in case the usedProviders gating
+    // changes (or a caller drives validateFallbackChains directly).
+    // Full analysis: https://github.com/marco-jardim/opencode-model-router/issues/30#issuecomment-5343553727
     if (
       !isCatalogEmpty(catalog) &&
       usedProviders.has(providerId) &&
