@@ -300,6 +300,17 @@ function validatePresets(obj: Record<string, unknown>): Record<string, unknown> 
           `tiers.json: '${presetName}.${tierName}.whenToUse' must be an array`,
         );
       }
+      // A typo'd effort would otherwise load clean and be silently dropped at
+      // registration time, leaving a tier running at the provider default with
+      // only a warning nobody reads.
+      if (
+        t.effort !== undefined &&
+        !EFFORT_LEVELS.some((level) => level === t.effort)
+      ) {
+        throw new Error(
+          `tiers.json: preset '${presetName}' tier '${tierName}': effort must be one of ${EFFORT_LEVELS.join(", ")}`,
+        );
+      }
     }
   }
 
