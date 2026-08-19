@@ -10,7 +10,43 @@ They run in their own workflow, `.github/workflows/smoke.yml`:
 
 - **Weekly**, on a schedule (Mondays, 07:17 UTC).
 - **On demand** — Actions → *smoke* → *Run workflow* (`workflow_dispatch`).
-- **Skips green without credentials.** The first step checks for the `ANTHROPIC_API_KEY` secret; if it is absent (forks, secretless checkouts) every later step is skipped and the run ends green with a `::notice`, never red.
+- **Skips green without credentials.** The first step checks for the `ANTHROPIC_API_KEY` and `OPENCODE_API_KEY` secrets; if both are absent (forks, secretless checkouts) every later step is skipped and the run ends green with a `::notice`, never red.
+
+### Dual-key gate and the smoke model
+
+Either credential can drive the lane. **Anthropic wins when both are present** — it is the proven-stable default and needs no tier override.
+
+| Secrets present | Model | `MODEL_ROUTER_SMOKE_MODEL` |
+|---|---|---|
+| `ANTHROPIC_API_KEY` (with or without the other) | `anthropic/claude-haiku-4-5` | not exported |
+| `OPENCODE_API_KEY` only | `opencode-go/qwen3.7-plus` | `opencode-go/qwen3.7-plus` |
+| neither | — | lane skipped green |
+
+`MODEL_ROUTER_SMOKE_MODEL` overrides the model in both smoke files. **Unset, the Anthropic path is byte-identical to before** — no file is written and nothing is touched. An *empty* value counts as unset, because a GitHub Actions `env:` entry bound to an empty expression still exports `""`, which would otherwise slip through `??` and produce `--model ""`.
+
+### Why an overrides file is required
+
+`opencode run --model X` sets only the **orchestrator** model. Both smoke tests assert on behaviour inside a plugin-registered **subagent** (`Task(subagent_type="fast")`), whose model comes from the active preset's tier config — so it stays on Anthropic no matter what `--model` says. An earlier attempt that changed only `--model` produced a green run in which the guard-firing subagent was still `anthropic/claude-haiku-4-5`; that green proved nothing.
+
+When `MODEL_ROUTER_SMOKE_MODEL` is set, each smoke file therefore also writes the project overrides file `.opencode/opencode-model-router.overrides.jsonc` (gitignored), repointing `fast`/`medium`/`heavy` of the active preset at the smoke model. Graders resolve through the same config, so they move too.
+
+Two details that are easy to get wrong:
+
+- **`variant: ""` is deliberate.** The bundled `anthropic` preset sets `variant: "max"` on `medium`/`heavy`. The loader deep-merges, so siblings survive and keys cannot be deleted; `src/index.ts` applies `variant` behind a truthiness check, so an empty string is the only way to stop an Anthropic-only knob riding along to a non-Anthropic model.
+- **Lifecycle is leak-free.** Each file captures any pre-existing overrides content, writes its own, and restores-or-unlinks in a `finally` — mirroring how `layer2-gate.smoke.test.ts` already manages its temporary repo-root `opencode.json`. The logic is duplicated in both files rather than shared, deliberately: each runs as an independent live process and local reasoning beats cleverness here.
+
+`vitest.smoke.config.ts` sets `fileParallelism: false`. Two concurrent `opencode run` processes contend on the CLI's local SQLite state database and the loser exits 1 after ~0.7s with `Error: Unexpected error / database is locked`.
+
+### Live validation record
+
+Validated **2026-08-19** against `opencode-go/qwen3.7-plus`:
+
+- Full lane green — `guard-hardblock` 137.5s, `layer2-gate` 94.1s, both exit 0.
+- The only provider/model pair in either captured transcript was `"providerID":"opencode-go","modelID":"qwen3.7-plus"` — no Anthropic fallback anywhere. `guard-hardblock` now asserts this in-test whenever `MODEL_ROUTER_SMOKE_MODEL` is set, so a silent fallback fails the run instead of passing it.
+- **Auth mechanism: the environment variable, nothing else.** Proven by moving `~/.local/share/opencode/auth.json` aside and unsetting `ANTHROPIC_API_KEY`, then running the lane green on `OPENCODE_API_KEY` alone (credential store restored byte-identically, SHA256 verified). CI needs no `opencode auth login` and no materialized `auth.json`.
+- `opencode-go/mimo-v2.5` was tried first and **failed behaviourally** as orchestrator: 133.7s, exit 0, but zero read-guard markers — it never drove enough sequential reads to trip the budget. Not a gate regression; it is not a suitable smoke driver.
+
+Cost note: the OpenCode Go arm bills against the OpenCode Zen subscription quota, not per-token Anthropic spend — the weekly lane is ~4 live model calls and is comfortably inside quota.
 
 ## Definition of Done
 
