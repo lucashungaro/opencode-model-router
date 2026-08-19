@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -190,6 +190,105 @@ describe("router-command — model catalog", () => {
     expect(text).toContain("Model issues in the active preset");
     // suggests the one model the catalog does have
     expect(text).toContain("anthropic/claude-haiku-4-5");
+  });
+
+  // -------------------------------------------------------------------------
+  // The passive catalog check must not put a network round-trip in front of the
+  // first message of every session. Turn 1 starts the fetch and returns; a later
+  // turn reports what it found.
+  // -------------------------------------------------------------------------
+
+  const flush = () => new Promise<void>((r) => setImmediate(r));
+
+  it("turn 1 returns without awaiting the catalog fetch", async () => {
+    invalidateConfigCache();
+    let release!: (v: any) => void;
+    const pending = new Promise<any>((r) => {
+      release = r;
+    });
+    let calls = 0;
+    const slow: any = {
+      directory: ".",
+      client: {
+        config: {
+          providers: () => {
+            calls++;
+            return pending;
+          },
+        },
+      },
+    };
+    const h: any = await ModelRouterPlugin(slow);
+    // If the hook awaited the fetch, this never settles and the test times out.
+    await h["chat.message"]({ sessionID: "s-slow" }, { parts: [] });
+    expect(calls).toBe(1);
+    release({ data: { providers: [], default: {} } });
+    await flush();
+  });
+
+  it("emits the passive model warning on a later turn, not on turn 1", async () => {
+    invalidateConfigCache();
+    const h: any = await ModelRouterPlugin(ctx as any);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // catalog-derived warnings only; the orphan-pattern warning is pure config
+      // analysis and is deliberately emitted on turn 1
+      const catalogWarnings = () =>
+        warn.mock.calls
+          .map((c) => String(c[0]))
+          .filter((m) => !m.includes("strong-model pattern"));
+
+      await h["chat.message"]({ sessionID: "s1" }, { parts: [] });
+      expect(catalogWarnings()).toEqual([]);
+
+      await flush();
+
+      await h["chat.message"]({ sessionID: "s1" }, { parts: [] });
+      const late = catalogWarnings();
+      expect(late.length).toBeGreaterThan(0);
+      expect(late.some((m) => m.includes("model-missing"))).toBe(true);
+
+      // and it stays a one-shot: a third turn adds nothing
+      const before = late.length;
+      await h["chat.message"]({ sessionID: "s1" }, { parts: [] });
+      expect(catalogWarnings()).toHaveLength(before);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("does not cache a turn-1 fetch failure into /router models", async () => {
+    invalidateConfigCache();
+    let calls = 0;
+    const flaky: any = {
+      directory: ".",
+      client: {
+        config: {
+          providers: async () => {
+            calls++;
+            if (calls === 1) throw new Error("not ready");
+            return {
+              data: {
+                providers: [
+                  {
+                    id: "anthropic",
+                    models: { "claude-haiku-4-5": { id: "claude-haiku-4-5" } },
+                  },
+                ],
+                default: {},
+              },
+            };
+          },
+        },
+      },
+    };
+    const h: any = await ModelRouterPlugin(flaky);
+    await h["chat.message"]({ sessionID: "s2" }, { parts: [] });
+    await flush();
+
+    const out = { parts: [] as any[] };
+    await h["command.execute.before"]({ command: "router", arguments: "models" }, out);
+    expect(out.parts[0].text).toContain("anthropic/claude-haiku-4-5");
   });
 
   // A failed or unavailable fetch must degrade to a message, not an exception.

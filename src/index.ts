@@ -282,9 +282,39 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
     }
   };
 
-  // One-shot guard so the passive stale-model warning runs at most once per
-  // plugin lifetime; re-validate on demand with /router.
-  let catalogChecked = false;
+  // Deferred passive catalog check. The first orchestrator turn only STARTS the
+  // fetch (fire-and-forget, never awaited on the chat.message hot path) and
+  // parks the result in a local; the warning is emitted on the first LATER turn
+  // that finds the promise already settled — normally turn 2. Deliberate
+  // tradeoff: a report-only diagnostic showing up one turn late costs nothing,
+  // while awaiting a network round-trip in front of every session's first
+  // message costs every user every session. No timers (banned in src/), and the
+  // continuation writes to a local variable only — it never touches an
+  // output.parts of a message the hook has already returned.
+  //
+  // Command handlers deliberately keep their own fresh fetchCatalog() call, so a
+  // turn-1 failure (server not ready yet) is never cached into `/router models`.
+  let catalogFetchStarted = false;
+  /** undefined = not started or still in flight; null = the fetch failed. */
+  let deferredCatalog: Catalog | null | undefined;
+  // One-shot guards so each passive warning runs at most once per plugin
+  // lifetime; re-validate on demand with /router.
+  let catalogWarned = false;
+  let orphanWarned = false;
+
+  const startCatalogFetch = (): void => {
+    if (catalogFetchStarted) return;
+    catalogFetchStarted = true;
+    // fetchCatalog already swallows its own errors; the .catch is belt-and-
+    // braces so this fire-and-forget promise can never reject unhandled.
+    void fetchCatalog()
+      .then((c) => {
+        deferredCatalog = c;
+      })
+      .catch(() => {
+        deferredCatalog = null;
+      });
+  };
 
   const enableDelegateTool =
     cfg.experimental?.verifiedDelegateTool === true ||
@@ -679,32 +709,44 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       // at models opencode's catalog says are missing or deprecated. This is the
       // whole point of the catalog: a bad model id otherwise fails silently on
       // every subagent dispatch. Orchestrator sessions only, and never throws.
-      if (!catalogChecked && sid && !sessionStore.isSubagent(sid)) {
-        catalogChecked = true;
+      // The catalog half is deferred (see startCatalogFetch): turn 1 starts the
+      // fetch, a later turn reports it.
+      if (sid && !sessionStore.isSubagent(sid)) {
         try {
-          // Pure config analysis (no catalog needed): strong-model patterns
-          // that match nothing in the active preset silently downgrade `auto`
-          // tiers to the prescriptive prompt.
-          for (const p of findOrphanedStrongPatterns(cfg)) {
-            console.warn(
-              `[model-router] strong-model pattern '${p}' matches no model in preset '${cfg.activePreset}' — auto prompt style falls back to prescriptive`,
-            );
-          }
-          const catalog = await fetchCatalog();
-          if (catalog) {
-            for (const it of validateModels(cfg, catalog)) {
-              const hint =
-                it.suggestions.length > 0
-                  ? ` — try ${it.suggestions.join(", ")}`
-                  : "";
-              // Fallback issues are keyed by the chain's provider, not a tier.
-              const where =
-                it.scope === "fallback"
-                  ? `${it.tier}[${it.providerId}]`
-                  : `@${it.tier}`;
+          // Pure config analysis (no catalog needed, so no reason to defer it):
+          // strong-model patterns that match nothing in the active preset
+          // silently downgrade `auto` tiers to the prescriptive prompt.
+          if (!orphanWarned) {
+            orphanWarned = true;
+            for (const p of findOrphanedStrongPatterns(cfg)) {
               console.warn(
-                `[model-router] ${where} ${it.ref}: ${it.kind}${hint}`,
+                `[model-router] strong-model pattern '${p}' matches no model in preset '${cfg.activePreset}' — auto prompt style falls back to prescriptive`,
               );
+            }
+          }
+
+          if (!catalogFetchStarted) {
+            // Turn 1: kick the fetch off and move on. NO await here.
+            startCatalogFetch();
+          } else if (!catalogWarned && deferredCatalog !== undefined) {
+            // A later turn found the turn-1 fetch already settled: report now.
+            catalogWarned = true;
+            const catalog = deferredCatalog;
+            if (catalog) {
+              for (const it of validateModels(cfg, catalog)) {
+                const hint =
+                  it.suggestions.length > 0
+                    ? ` — try ${it.suggestions.join(", ")}`
+                    : "";
+                // Fallback issues are keyed by the chain's provider, not a tier.
+                const where =
+                  it.scope === "fallback"
+                    ? `${it.tier}[${it.providerId}]`
+                    : `@${it.tier}`;
+                console.warn(
+                  `[model-router] ${where} ${it.ref}: ${it.kind}${hint}`,
+                );
+              }
             }
           }
         } catch {
