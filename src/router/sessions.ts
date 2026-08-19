@@ -274,9 +274,13 @@ export function createSessionStore(options: SessionStoreOptions = {}) {
       input: { sessionID: string; tool: string; args: unknown },
       outputRef: Record<string, unknown>,
     ): void {
-      touch(input.sessionID);
       const state = subagentCapState.get(input.sessionID);
       if (!state) return; // not a tracked subagent session
+      // Touch AFTER the early return: touching first created a lastTouch entry
+      // for every untracked session that ever ran a tool, and nothing else ever
+      // removed it. Tracked sessions still refresh here, because the read-only
+      // filter below runs later.
+      touch(input.sessionID);
       if (!READ_ONLY_TOOLS.has(input.tool)) return;
 
       const fp = fingerprintToolCall(input.tool, input.args);

@@ -7,6 +7,7 @@ import type { Check, DoD } from "./dod";
 import type { Verdict, DeterministicDeps, MutexRegistry, ExecResult } from "./types";
 import { scrubText } from "../guard/scrub";
 import { resolveAgainst } from "./paths";
+import { isAbsolute } from "node:path";
 
 // ---------------------------------------------------------------------------
 // MutexRegistry — per-key serialization via promise-chaining
@@ -115,9 +116,14 @@ interface CheckResult {
 async function runFileExists(check: Check, deps: DeterministicDeps): Promise<CheckResult> {
   try {
     if (!check.path) return { ok: false, reason: "fileExists check missing 'path'" };
-    const ok = await deps.fs.fileExists(resolveAgainst(deps.cwd, check.path));
+    const resolved = resolveAgainst(deps.cwd, check.path);
+    const ok = await deps.fs.fileExists(resolved);
     if (ok) return { ok: true, evidence: `exists: ${check.path}` };
-    return { ok: false, reason: `file not found in ${deps.cwd}: ${check.path}` };
+    // An absolute check path ignores deps.cwd entirely, so claiming the file
+    // was missing "in <cwd>" would name a directory the check never looked in.
+    return isAbsolute(check.path)
+      ? { ok: false, reason: `file not found: ${resolved}` }
+      : { ok: false, reason: `file not found in ${deps.cwd}: ${check.path}` };
   } catch (err) {
     return { ok: false, reason: `fileExists check errored: ${scrubText(String(err))}` };
   }

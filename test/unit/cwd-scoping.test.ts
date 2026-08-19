@@ -191,6 +191,22 @@ describe("runDeterministic — external cwd resolution", () => {
     expect(seenPath).toBe(abs);
   });
 
+  it("does not claim an absolute missing path was looked for 'in' deps.cwd", async () => {
+    const routerDir = join(tmpdir(), "router-home");
+    const absent = isWin ? "C:\\nowhere\\out.txt" : "/nowhere/out.txt";
+    const verdict = await runDeterministic(fileExistsDoD(absent), {
+      exec: async () => ({ code: 0, stdout: "", stderr: "", timedOut: false }),
+      fs: { fileExists: async () => false, readFile: async () => "" },
+      cwd: routerDir,
+      mutex: createMutexRegistry(),
+    });
+    expect(verdict.pass).toBe(false);
+    const reasons = verdict.reasons.join(" ");
+    expect(reasons).toContain(absent);
+    // The check never consulted deps.cwd, so the reason must not name it.
+    expect(reasons).not.toContain(routerDir);
+  });
+
   it("emits an honest, cwd-scoped reason when the file is missing", async () => {
     const externalCwd = join(tmpdir(), "producer-ext");
     const deps: DeterministicDeps = {
