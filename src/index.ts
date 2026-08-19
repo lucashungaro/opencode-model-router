@@ -49,6 +49,7 @@ import {
 import type { Cap, SubagentState } from "./router/sessions";
 import { createTrajectoryStore } from "./telemetry/trajectory";
 import { createGuardStore } from "./guard/store";
+import { createIdleTtlSweeper } from "./router/idle-sweep";
 import { guardBeforeCall, guardAfterCall, formatScorecard } from "./guard/enforce";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -212,6 +213,18 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   const guardStore = createGuardStore();
 
   const changedFileStore = createChangedFileStore();
+
+  // Idle-TTL maintenance for the four per-instance stores. No timer is
+  // scheduled: the sweeper is invoked opportunistically from chat.message and
+  // self-throttles, so a long-lived plugin instance cannot accumulate state for
+  // sessions that went away without a teardown hook.
+  const sweepIdleStores = createIdleTtlSweeper([
+    () => sessionStore.sweep(),
+    () => guardStore.sweep(),
+    () => trajectoryStore.sweep(),
+    () => changedFileStore.sweep(),
+  ]);
+
   // Layer-2's impure corner: exec, fs, and the opencode client, built once and
   // read back through getConfig so a reloaded cfg (from /preset, /budget or
   // /router enforce) applies to graded work too.
@@ -572,6 +585,11 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       try {
         cfg = loadConfig();
       } catch {}
+      try {
+        sweepIdleStores();
+      } catch {
+        // best-effort maintenance: never break a real turn
+      }
       const tierNames = Object.keys(getActiveTiers(cfg));
       sessionStore.registerFromChatMessage(input, output, cfg, tierNames);
 
