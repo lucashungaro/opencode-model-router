@@ -18,6 +18,11 @@ import { access, readFile as fsReadFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { createMutexRegistry } from "./deterministic";
 import { tierModel } from "./dispatch";
+import {
+  DEFAULT_GRADER_PROMPT_TIMEOUT_MS,
+  timeoutMs,
+  withTimeout,
+} from "./timeout";
 import type { RouterConfig } from "../router/config";
 import type { GateDeps } from "./gate";
 
@@ -144,15 +149,35 @@ export function createVerificationWiring(deps: {
     if (!sid) return { sessionID: "", text: "" };
     graderSessions.add(sid);
     try {
-      const model = tierModel(getConfig(), req.tier) ?? undefined;
-      const res: any = await client.session.prompt({
-        path: { id: sid },
-        body: {
-          ...(model ? { model } : {}),
-          system: req.system,
-          parts: [{ type: "text", text: req.prompt }],
-        },
-      });
+      const cfg = getConfig();
+      const model = tierModel(cfg, req.tier) ?? undefined;
+      // Time-boxed for the same reason as the producer prompt, but with a
+      // sharper edge: a grader that never answers must not be able to hold the
+      // gate open. The RouterTimeoutError is deliberately allowed to propagate
+      // to runChecker, whose fail-closed catch turns it into a non-passing
+      // verdict naming the timeout. Explicitly NOT modelled as "inconclusive",
+      // because an inconclusive grader that releases the gate is a fabricated
+      // pass wearing a hedge.
+      //
+      // No abort is issued here: the finally below already calls
+      // disposeChildSession, which aborts before it deletes. Aborting twice
+      // would break the exactly-once disposal contract for no extra
+      // cancellation.
+      const res: any = await withTimeout(
+        client.session.prompt({
+          path: { id: sid },
+          body: {
+            ...(model ? { model } : {}),
+            system: req.system,
+            parts: [{ type: "text", text: req.prompt }],
+          },
+        }),
+        timeoutMs(
+          cfg.enforcement?.verify?.graderTimeoutMs,
+          DEFAULT_GRADER_PROMPT_TIMEOUT_MS,
+        ),
+        "grader prompt",
+      );
       return { sessionID: sid, text: extractAssistantText(res) };
     } finally {
       graderSessions.delete(sid);
