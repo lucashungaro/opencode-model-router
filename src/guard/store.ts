@@ -56,6 +56,19 @@ export function createGuardStore(options: GuardStoreOptions = {}) {
       if (n !== undefined) pendingNotes.delete(sessionID);
       return n;
     },
+    /**
+     * Start a new dispatch round for an existing session: reset the
+     * per-dispatch tool-call count while preserving cumulative totals,
+     * redundancy fingerprints and deliverable state. No-op for sessions
+     * that were never guarded (nothing to reset).
+     */
+    beginDispatch(sessionID: string): void {
+      const s = states.get(sessionID);
+      if (!s) return;
+      s.toolCallCount = 0;
+      s.dispatches += 1;
+      touch(sessionID);
+    },
     clear(sessionID: string): void {
       evict(sessionID);
     },

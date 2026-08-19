@@ -36,6 +36,8 @@ export interface TrajectoryState {
   escalations: number;
   finalTier: string | null;
   costUnits: number;
+  /** Dispatch rounds seen for this session (1 on first dispatch). */
+  dispatches: number;
 }
 
 export function createTrajectory(
@@ -62,6 +64,7 @@ export function createTrajectory(
     escalations: 0,
     finalTier: null,
     costUnits: 0,
+    dispatches: 1,
   };
 }
 
@@ -130,6 +133,7 @@ export function trajectoryMetrics(
     escalations: state.escalations,
     final_tier: state.finalTier,
     cost_units: state.costUnits,
+    dispatches: state.dispatches,
   };
 }
 
@@ -182,6 +186,17 @@ export function createTrajectoryStore(options: TrajectoryStoreOptions = {}) {
     recordToolEvent(sessionID: string, event: TrajectoryToolEvent): void {
       const s = ensureState(sessionID);
       recordToolEvent(s, event);
+    },
+
+    /**
+     * Record a resumed dispatch into an existing session. Creates state when
+     * absent so a resume that outlived an idle-TTL sweep still reports a
+     * dispatch count rather than throwing.
+     */
+    recordResume(sessionID: string, tier?: string | null): void {
+      const s = ensureState(sessionID, tier);
+      s.dispatches += 1;
+      touch(sessionID);
     },
 
     setStopReason(sessionID: string, reason: string): void {

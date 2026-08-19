@@ -34,6 +34,7 @@ describe("createTrajectory", () => {
     expect(s.escalations).toBe(0);
     expect(s.finalTier).toBeNull();
     expect(s.costUnits).toBe(0);
+    expect(s.dispatches).toBe(1);
   });
 
   it("records tier when explicitly provided", () => {
@@ -193,6 +194,7 @@ describe("trajectoryMetrics", () => {
         "escalations",
         "final_tier",
         "cost_units",
+        "dispatches",
       ].sort(),
     );
   });
