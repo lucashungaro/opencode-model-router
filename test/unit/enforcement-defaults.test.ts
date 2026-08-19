@@ -314,7 +314,13 @@ describe("tiers.json enforcement block — behaviour invariance", () => {
     expect(shipped.enforcement?.verify?.minGraderTier ?? null).toBe(
       absent.enforcement?.verify?.minGraderTier ?? null,
     );
-    // src/index.ts: `cfg.enforcement?.verify?.graderTemperature ?? 0`
+    // src/index.ts (post-#19): the hook sets `output.temperature` only when
+    // `graderTemperature !== undefined`. The shipped block pins 0; a config
+    // with no block sets no temperature at all and falls through to the
+    // provider default — an intentional #19 difference for users who strip
+    // the key. This assertion therefore no longer proves runtime invariance;
+    // it pins that the shipped VALUE stays 0, the historical default, so a
+    // silent drift of the bundled block still fails loudly here.
     expect(shipped.enforcement?.verify?.graderTemperature ?? 0).toBe(
       absent.enforcement?.verify?.graderTemperature ?? 0,
     );
