@@ -207,14 +207,81 @@ function runEnforced(prompt: string, outFile: string) {
 const PROMPT =
   'Use Task(subagent_type="fast", description="recon", prompt="Read these files ONE AT A TIME using the read tool, in this exact order, and after each give a one-line summary: README.md, then package.json, then tsconfig.json, then tiers.json, then LICENSE, then src/index.ts. Use the read tool separately for each file; do not skip any."). After the subagent returns, reply with the single word DONE.';
 
-// Stable substrings sourced directly from guards.ts:
-//   forcingMessage  → always "NEXT:"
-//   read_budget obs → "read/draft budget exhausted"
-//   redundant_read  → "redundant" (guard name / fp string)
-// Additional lenient markers (model paraphrases when inner session events
-// are not forwarded to outer stream):
-//   "read budget"   → model says "I've exhausted my read budget" when blocked
-const MARKERS = ["NEXT:", "read/draft", "budget exhausted", "redundant", "read budget"];
+/**
+ * Evidence that the read guard fired.
+ *
+ * WHY REGEXES AND NOT SUBSTRINGS: the surface we search is the PARENT session
+ * transcript, which carries only the subagent's FINAL TEXT — the model's own
+ * paraphrase — not the plugin's injected banners.  Literal bigrams are
+ * therefore inherently brittle there.  CI run 32244017281 failed on exactly
+ * this: the guard fired correctly (the subagent stopped at readDraftCap=3 and
+ * said "The read-only budget was exhausted after 3 files") but "budget was
+ * exhausted" breaks the "budget exhausted" bigram and "read-only budget"
+ * breaks "read budget", so all five literals missed a textbook guard hit.
+ *
+ * These match the CONCEPT with bounded proximity instead: a budget/exhaustion
+ * pairing within one clause, or a read/draft budget-or-cap noun phrase.
+ * Deliberately NOT matched: "ESCALATE" on its own, which is a tier-prompt
+ * protocol word that appears in transcripts where no guard ever fired.
+ *
+ * Any change here must keep GUARD_MATCHER_FIXTURES below passing.
+ */
+const MARKERS: ReadonlyArray<{ name: string; re: RegExp }> = [
+  // guards.ts forcingMessage always contains "NEXT:" (survives verbatim when
+  // inner-session events do reach the outer stream).
+  { name: "forcing-note", re: /NEXT:/i },
+  // "budget exhausted", "budget was exhausted", "exhausted my read budget",
+  // "budget has been exhausted" — same clause, either order.
+  {
+    name: "budget-exhausted",
+    re: /budget[^.\n]{0,40}exhaust|exhaust[^.\n]{0,40}budget/i,
+  },
+  // "read budget", "read-only budget", "read/draft budget", "draft cap",
+  // "read cap". Requires the budget/cap noun, so prose like "read the files"
+  // cannot match.
+  {
+    name: "read-budget-noun",
+    re: /\b(?:read|draft)[-\s/]*(?:only|draft|read)?[-\s/]*(?:budget|cap)\b/i,
+  },
+  { name: "cap-reached", re: /\bcap\s+(?:reached|hit)\b/i },
+  { name: "redundant-read", re: /\bredundant\b/i },
+];
+
+/**
+ * Fixtures pinning the matcher's behaviour, asserted below WITHOUT any live
+ * model call so a regex regression is caught instantly rather than a week
+ * later on the weekly schedule.
+ *
+ * The control case is the point: it proves the matcher is not vacuous.
+ */
+const GUARD_MATCHER_FIXTURES: ReadonlyArray<{
+  label: string;
+  text: string;
+  shouldMatch: boolean;
+}> = [
+  {
+    label: "CI paraphrase (run 32244017281)",
+    text: "The read-only budget was exhausted after 3 files",
+    shouldMatch: true,
+  },
+  {
+    label: "local guard text",
+    text: "I've hit the draft-only read budget without a producing action",
+    shouldMatch: true,
+  },
+  {
+    label: "control: no guard evidence",
+    text:
+      "I read the files and here is the summary of the project structure " +
+      "and dependencies",
+    shouldMatch: false,
+  },
+];
+
+/** Names of every marker matching `text`. */
+function matchGuardMarkers(text: string): string[] {
+  return MARKERS.filter((m) => m.re.test(text)).map((m) => m.name);
+}
 
 // The opposite arm — a genuinely trivial dispatch must NOT be hard-blocked —
 // is asserted deterministically in test/integration/proportional-downgrade.test.ts
@@ -224,6 +291,29 @@ const MARKERS = ["NEXT:", "read/draft", "budget exhausted", "redundant", "read b
 // subagent completes a one-file lookup or bails depends on whether the model
 // honours that footer. Absence of guard markers from a subagent that never ran
 // the read proves nothing, so the arm would pass vacuously.
+
+// Intentionally NOT gated behind RUN_OC_SMOKE: this suite spawns nothing and
+// costs nothing, so it runs on every invocation of the smoke config and pins
+// the matcher even when the live lane is not being exercised.
+describe("read-guard marker matcher", () => {
+  for (const { label, text, shouldMatch } of GUARD_MATCHER_FIXTURES) {
+    it(`${shouldMatch ? "matches" : "rejects"}: ${label}`, () => {
+      const found = matchGuardMarkers(text);
+      if (shouldMatch) {
+        expect(
+          found,
+          `expected guard evidence in ${JSON.stringify(text)}`
+        ).not.toHaveLength(0);
+      } else {
+        expect(
+          found,
+          `matcher is vacuous — it fired on text with no guard evidence: ` +
+            JSON.stringify(text)
+        ).toHaveLength(0);
+      }
+    });
+  }
+});
 
 d("guard hard-block smoke", () => {
   it(
@@ -238,14 +328,15 @@ d("guard hard-block smoke", () => {
         restoreOverrides();
       }
 
-      // At least one read-guard marker must appear (case-insensitive)
-      const lower = stdout.toLowerCase();
-      const found = MARKERS.filter((m) => lower.includes(m.toLowerCase()));
+      // At least one read-guard marker must appear. The regexes carry their
+      // own /i flag, so the raw transcript is searched (no pre-lowercasing).
+      const found = matchGuardMarkers(stdout);
 
       if (found.length === 0) {
         const excerpt = stdout.slice(0, 600);
         throw new Error(
-          `Read-guard DID NOT fire: none of [${MARKERS.join(", ")}] found in output.\n` +
+          `Read-guard DID NOT fire: none of [${MARKERS.map((m) => m.name).join(", ")}] ` +
+            `matched the output.\n` +
             `Output excerpt (600 chars):\n${excerpt}`
         );
       }
