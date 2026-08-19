@@ -786,7 +786,7 @@ After `/annotate-plan`:
 
 Measured with the bundled Anthropic preset in normal mode (the shipped `activePreset`/`activeMode` defaults), the routing protocol is 3,089 characters for a non-Claude orchestrator. A Claude orchestrator receives 3,861 characters after its authority prefix, or 4,659 characters when the 798-character DoD/enforcement section is enabled. That is roughly 770–1,295 tokens across the three paths at 3.6–4.0 characters per token. The optional anti-narration clause adds another 650 characters to the Claude path.
 
-These are character counts of the golden snapshots in `test/golden/__snapshots__/`, so they move whenever the protocol text does — the `test/unit/docs-drift.test.ts` check fails if this section drifts from the figures quoted above.
+These are character counts of the prompts the shipped config actually produces, so they move whenever the protocol text does. `test/unit/docs-drift.test.ts` recomputes all three from `tiers.json` on every run and fails unless this section still quotes them, so a change that grows the protocol cannot land without updating these numbers.
 
 | Version | Measured overhead | Features |
 |---------|-------------------|----------|

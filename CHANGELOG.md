@@ -18,10 +18,10 @@ is unchanged unless you opt into the new keys.
   to the provider on dispatch. The bundled `fable-effort` preset uses it to run all three
   tiers on the same model at different effort levels, so the cost ladder comes from
   reasoning depth rather than model size.
-- **Goal-oriented prompt styles.** `promptStyle` (`auto` | `rule-based` | `goal-oriented`),
+- **Goal-oriented prompt styles.** `promptStyle` (`auto` | `prescriptive` | `goal-oriented`),
   `modelGenerations`, and `tierPromptsGoalOriented` let a tier ship a goal-oriented prompt
   instead of the terse rule list. Under `auto` a tier switches to the goal-oriented text
-  when its model matches a declared newer generation; everything else keeps the rule-based
+  when its model matches a declared newer generation; everything else keeps the prescriptive
   prompt.
 - **Session-resume accounting.** A resumed session no longer restarts its budget: the
   cumulative ceiling carries across resumes, and registration now returns a `RegisterResult`
@@ -54,7 +54,7 @@ is unchanged unless you opt into the new keys.
 - **Under `promptStyle: "auto"`, some bundled tiers switch to goal-oriented prompts.** Tiers
   whose model is `claude-fable-5` or `claude-opus-4-8` — `anthropic.heavy`, `hybrid.heavy`,
   and all three `fable-effort` tiers — now receive the goal-oriented text. Set
-  `promptStyle` to `rule-based` to keep the previous prompts.
+  `promptStyle` to `prescriptive` to keep the previous prompts.
 
 ### Fixed
 
@@ -69,13 +69,14 @@ is unchanged unless you opt into the new keys.
 
 ### Deliberately not ported
 
-Four things from the source branch were left behind on purpose. The **lessons memory store**
+Several things from the source branch were left behind on purpose. The **lessons memory store**
 (~800 lines) has no measurement behind it — if it is revisited it must arrive opt-in and
 default-false rather than as a new always-on subsystem. The **anti-context-anxiety clause**,
 the **INTENT section**, and the **workspace-root line** would re-add the prose that [#21]
 deliberately removed. Flipping `activePreset` to `"opus"` would change the default for every
 user, and flipping `enforcement.mode` to `"enforced"` would turn an advisory layer into a
-blocking one; both stay as they are.
+blocking one; both stay as they are. `src/guard/smoke-evidence.ts` is test-support only and
+carries no runtime behavior, so it was left as optional and not ported.
 
 ### Credits
 

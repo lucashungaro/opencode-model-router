@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
+import { validateConfig } from "../../src/router/config";
+import {
+  assembleSystemPrompt,
+  buildDelegationProtocol,
+} from "../../src/router/protocol";
+import type { RouterConfig } from "../../src/index";
 
 /**
  * Documentation-drift guards.
@@ -33,15 +39,27 @@ describe("docs drift", () => {
   it("quotes the measured prompt figures in README.md", () => {
     const readme = read("README.md");
 
-    // Measured from test/golden/__snapshots__/ with the bundled anthropic preset
-    // in normal mode (the shipped activePreset/activeMode defaults):
-    //   base protocol                3,089
-    //   + Claude authority prefix    3,861
-    //   + DoD/enforcement section    4,659
-    // Formatted with a thousands separator, as the README writes them.
-    const figures = ["3,089", "3,861", "4,659"];
+    // Recomputed here rather than pinned to a literal, so that growing the
+    // protocol fails this test instead of quietly making the README wrong.
+    // `validateConfig(tiers.json)` unmodified IS the documented measurement
+    // basis: the bundled anthropic preset in normal mode, i.e. the shipped
+    // activePreset/activeMode defaults.
+    const cfg = validateConfig(
+      JSON.parse(read("tiers.json")),
+    ) as unknown as RouterConfig;
+    const claude = "anthropic/claude-sonnet-4-6";
 
-    const missing = figures.filter((figure) => !readme.includes(figure));
+    const figures = {
+      "base protocol": buildDelegationProtocol(cfg).length,
+      "Claude orchestrator": assembleSystemPrompt(cfg, claude).length,
+      "Claude + enforcement": assembleSystemPrompt(cfg, claude, true).length,
+    };
+
+    // Thousands separator, matching how the README writes them.
+    const missing = Object.entries(figures)
+      .map(([label, chars]) => [label, chars.toLocaleString("en-US")] as const)
+      .filter(([, formatted]) => !readme.includes(formatted));
+
     expect(missing).toEqual([]);
   });
 });
