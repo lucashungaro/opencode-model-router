@@ -67,6 +67,58 @@ opencode-model-router injects a **delegation protocol** into the system prompt t
 
 All of this adds 3,089 characters for a non-Claude orchestrator or 3,861 characters for a Claude orchestrator (roughly 770–1,075 tokens at 3.6–4.0 characters per token).
 
+## Understanding how it works
+
+> This intuition-first walkthrough was written by [Lucas Húngaro](https://github.com/lucashungaro) for [his fork](https://github.com/lucashungaro/opencode-model-router), and is included here with his permission.
+
+There are a lot of moving parts, so let's use an analogy to explain how the plugin works.
+
+### Picking who does the work
+
+Think of your main orchestrator model as a head chef in a restaurant. You give it an order, and instead of cooking everything itself, it hands tasks to line cooks of different skill and price: a fast, cheap cook for simple tasks, a mid-level cook for everyday work, and an expensive expert for the hard problems.
+
+The chef assigns each task by what the task is, not by who is the "fanciest" cook. Reading a file, searching the codebase, or looking something up goes to the cheap cook. Writing and editing code goes to the mid-level cook. Gnarly architecture, security work, or debugging that has already failed a couple of times goes to the expert. Trivial one-off lookups the chef just handles itself, since delegating those would cost more than it saves.
+
+That is the routing in a nutshell. You pay expert prices only when a task genuinely needs an expert, which is exactly the point.
+
+### Making sure the work actually got done
+
+The enforcement layer is the kitchen's quality control. It exists because a cook saying "all done" is not the same as the dish being good.
+
+It works in two parts. First, a recipe card travels with each order, so the chef and the cook agree up front on what "done" means (say, the tests pass, or a specific file exists). Second, when the work comes back, someone other than the cook who made it tastes it, and that taster is at least as senior as the cook who executed it. They check it against the recipe card, and if it falls short, a note goes back to the chef suggesting a redo, maybe by a more capable cook.
+
+How strict all of this is comes down to one setting:
+
+- **Off:** no checking. A cook says done and it goes out.
+- **Advisory (the default):** everything still gets tasted and notes still get left, but nothing is ever held back. Gentle nudges only.
+- **Enforced:** a dish that fails its check is held back and redone, or handed to a better cook, before it can leave the kitchen.
+
+You can disable the enforcement layer entirely to save some tokens in the system prompt, at the cost of possible re-work if a subagent fails to meet the agreed-upon definition of "done." This is the enforcement feature.
+
+### The standing rule: limited trips to the pantry
+
+Separate from that optional quality control, the kitchen has one rule that is always in force, no matter which setting above you pick: a cook only gets so many trips to the pantry on a given task before they have to either start cooking or hand back what they have so far. And if a cook keeps checking the same shelf over and over, they get a sticky note telling them to stop. This is not about whether the dish is any good, it just keeps anyone from vanishing into the walk-in for an hour of "research" instead of producing something. It applies even with enforcement layer turned off.
+
+This is the read-only call cap feature. It prevents runaway "exploration" loops and redundant tool calls, which are a common source of wasted time and money.
+
+### Planning a big job up front
+
+For a large, multi-step job you do not have to let the chef work out each step on the fly. You can write the plan down and have the kitchen label every step on the ticket ahead of time with the cook who should handle it. Think of prepping a banquet where each course is pre-assigned to a station, so nobody is deciding in the middle of service.
+
+This is the plan annotation feature. You can invoke it with `/annotate-plan`. More details in [Plan annotation](#plan-annotation).
+
+### Keeping certain cooks on task
+
+Some cooks arrive with strong habits from their previous job. Left alone they tend to wander the whole pantry "just to be thorough," or they announce what they are about to do ("now I'll dice the onions") instead of actually doing it.
+
+For those cooks the plugin clips a short note to the top of their instructions: in this kitchen your job is the dish in front of you, not a tour of the pantry. It keeps them from burning time and money on busywork. This is the adversarial prefix. There is also an optional, off-by-default add-on (the anti-narration guardrail) that tells them to cook rather than describe cooking; turn it on only if a model keeps announcing it will do work but never really does it (this can be common on small/older models).
+
+### Setting the kitchen's priorities
+
+You can also tell the kitchen how to lean. One setting keeps things balanced, one pushes hard for savings and sends almost everything to the cheap cook (with the obvious quality trade-offs), one spends more freely when you want quality, and one goes expert-first for long, hard jobs. You also choose which suppliers the cooks come from (Anthropic, OpenAI, Google, GitHub Copilot, or a mix), and if a supplier is unavailable the kitchen falls back to another automatically. These are the budget modes, presets, and fallback chain features.
+
+In summary, the chef decides who cooks, the quality control decides whether the finished plate is good enough to serve, and the remaining knobs let you set the kitchen's budget, priorities, and suppliers.
+
 ## Cost simulation
 
 **Scenario: 50-message coding session with 30 delegated tasks**
