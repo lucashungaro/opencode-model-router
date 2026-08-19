@@ -310,28 +310,28 @@ For an npm install, `tiers.json` is **inside the cached package directory**, not
 
 ### Presets
 
-The plugin ships with four presets (switch with `/preset <name>`):
+The plugin ships with six presets (switch with `/preset <name>`):
 
 **anthropic** (default):
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
 | @fast | `anthropic/claude-haiku-4-5` | 1x |
-| @medium | `anthropic/claude-sonnet-4-5` (max) | 5x |
-| @heavy | `anthropic/claude-opus-4-6` (max) | 20x |
+| @medium | `anthropic/claude-sonnet-4-6` (max) | 5x |
+| @heavy | `anthropic/claude-opus-4-8` (max) | 20x |
 
 **openai**:
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
-| @fast | `openai/gpt-5.3-codex-spark` | 1x |
-| @medium | `openai/gpt-5.3-codex` | 5x |
-| @heavy | `openai/gpt-5.3-codex` (xhigh) | 20x |
+| @fast | `openai/gpt-5.4-mini-fast` | 1x |
+| @medium | `openai/gpt-5.5-fast` (high) | 5x |
+| @heavy | `openai/gpt-5.5-fast` (xhigh) | 20x |
 
 **github-copilot**:
 | Tier | Model | Cost ratio |
 |------|-------|-----------|
-| @fast | `github-copilot/claude-haiku-4-5` | 1x |
-| @medium | `github-copilot/claude-sonnet-4-5` | 5x |
-| @heavy | `github-copilot/claude-opus-4-6` (thinking) | 20x |
+| @fast | `github-copilot/claude-haiku-4.5` | 1x |
+| @medium | `github-copilot/claude-sonnet-4.6` | 5x |
+| @heavy | `github-copilot/claude-opus-4.6` | 20x |
 
 **google**:
 | Tier | Model | Cost ratio |
@@ -339,6 +339,13 @@ The plugin ships with four presets (switch with `/preset <name>`):
 | @fast | `google/gemini-2.5-flash` | 1x |
 | @medium | `google/gemini-2.5-pro` | 5x |
 | @heavy | `google/gemini-3-pro-preview` | 20x |
+
+**hybrid** — Anthropic for exploration and heavy analysis, OpenAI for implementation:
+| Tier | Model | Cost ratio |
+|------|-------|-----------|
+| @fast | `anthropic/claude-haiku-4-5` | 1x |
+| @medium | `openai/gpt-5.5-fast` (high) | 5x |
+| @heavy | `anthropic/claude-opus-4-8` (max) | 20x |
 
 **fable-effort** — one model, three reasoning depths (see [per-tier `effort`](#per-tier-effort)):
 | Tier | Model | Effort | Cost ratio |
@@ -493,6 +500,13 @@ A "resume" is a second `chat.message` to a session already tracked at the **same
 
 The ceiling follows the *current* cap, so a tighter resumed cap tightens the ceiling. `CAP:none` has no per-dispatch budget to derive from and therefore no cumulative ceiling. A **retry** (new session, e.g. an escalation to another tier) is not a resume: it gets fresh counters and an empty redundancy map. A session evicted by the idle-TTL sweep also comes back fresh.
 
+The sweep exists so per-session bookkeeping does not grow without bound in a long-running
+opencode process. A session is evicted once it has been idle for **1 hour**; every mutating
+entry point refreshes its stamp, and a tool call refreshes at *start* so a single long call
+cannot age out mid-flight. There are no timers: the sweep runs opportunistically off chat
+activity, throttled to at most once every **5 minutes**, and covers the four session-keyed
+stores (subagent sessions, guard state, trajectory telemetry, and changed-file tracking).
+
 The same accounting exists at the hard-guard layer: `guard.budget` resets per dispatch, with a cumulative ceiling of `guard.budget × 3` enforced as `cumulative_iteration_cap`.
 
 **If you never resume a subagent session, nothing changes** — a first dispatch's cumulative count equals its per-dispatch count, so the ceiling is unreachable and every banner is byte-identical to before.
@@ -594,6 +608,46 @@ Each tier (`@fast`, `@medium`, `@heavy`) has a system prompt that describes its 
 
 Two wordings of every default prompt ship: the enumerated `tierPrompts` above, and a shorter goal-oriented set. Which one a tier gets is decided by `promptStyle`, which defaults to `auto` (goal-oriented for strong models). See [Prompt styles](docs/CONFIG_REFERENCE.md#prompt-styles-promptstyle) in the config reference — including which shipped presets are affected.
 
+To replace a built-in goal-oriented prompt, set `tierPromptsGoalOriented` in the overrides
+file. It is the goal-oriented twin of `tierPrompts`: an entry replaces the built-in default
+for that tier name only, and tiers you do not list keep theirs.
+
+```jsonc
+{
+  // Only affects tiers that resolve to the goal-oriented style.
+  "tierPromptsGoalOriented": {
+    "medium": "You are @medium. Ship the change described in the dispatch, match the surrounding code, and return the files you touched plus the verification you ran."
+  }
+}
+```
+
+#### `modelGenerations`
+
+`modelGenerations` holds shared, case-insensitive substring patterns matched against a
+tier's model ID. Two lists exist:
+
+| List | Default | What it drives |
+|------|---------|----------------|
+| `strong` | `["claude-fable-5", "claude-mythos-5", "opus-4-8"]` | `promptStyle: "auto"` resolution — a match resolves to `goal-oriented`, everything else to `prescriptive` (`isStrongModel` in `src/router/prompts.ts`). |
+| `claude5x` | `["claude-fable-5", "claude-mythos-5"]` | The Claude 5.x generation list. In code it seeds the default `strong` list (`DEFAULT_STRONG_MODEL_PATTERNS` in `src/router/config.ts`), so `strong` is a superset of it by construction. |
+
+Only `strong` is read at match time, and setting it replaces the default list outright
+rather than extending it — include the built-in patterns you still want. Claude-specific
+prompt prefixes and the anti-narration detector do **not** use these lists; they match the
+model ID directly (`isClaudeModel` in `src/router/protocol.ts`).
+
+```jsonc
+{
+  "modelGenerations": {
+    // Keep the shipped patterns and add a locally-hosted strong model.
+    "strong": ["claude-fable-5", "claude-mythos-5", "opus-4-8", "my-org/big-coder"]
+  }
+}
+```
+
+See [Prompt styles](docs/CONFIG_REFERENCE.md#prompt-styles-promptstyle) in the config
+reference for the full description.
+
 **When to customize:** if a specific provider/model in a preset needs different instructions (e.g. Gemini-specific tool format, tighter/looser caps for a weaker local model), add `"prompt": "..."` on that tier only. All other presets keep using the global.
 
 ```json
@@ -688,6 +742,8 @@ When `antiNarration` is enabled, the detector runs for all models (not only Clau
 | `costRatio` | number | Relative cost (1 = cheapest). Shown in prompt. |
 | `thinking` | object | Anthropic thinking: `{ "budgetTokens": 10000 }` |
 | `reasoning` | object | OpenAI reasoning: `{ "effort": "high", "summary": "detailed" }` |
+| `effort` | string | Provider-agnostic reasoning effort: `"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"`. See [Per-tier `effort`](#per-tier-effort). |
+| `color` | string | Optional agent colour passed through to the opencode agent registration. |
 | `description` | string | Shown in `/tiers` output |
 | `steps` | number | Max agent turns |
 | `prompt` | string | Optional per-tier system prompt override. Falls back to the style-appropriate default when omitted. |
@@ -767,6 +823,53 @@ Advisory is the default. To change the level:
 
 > Enforcement applies to subagent/delegate sessions only. The orchestrator session is never hard-blocked.
 
+**Per-tier override.** `enforcement.perTier` maps a tier name to `off`, `advisory` or
+`enforced` and wins over the global `mode` for delegations to that tier — useful to keep
+`@fast` advisory while `@medium` and `@heavy` are enforced:
+
+```jsonc
+{
+  "enforcement": {
+    "mode": "enforced",
+    "perTier": { "fast": "advisory" }
+  }
+}
+```
+
+#### Time-boxes
+
+Three ceilings bound the verification pipeline so a stuck model cannot hang a delegation
+forever. All are integers in milliseconds, live under `enforcement.verify`, and ship
+explicitly in `tiers.json`:
+
+| Key | Bundled default | Bounds |
+|-----|-----------------|--------|
+| `delegateTimeoutMs` | `600000` (10 min) | One producer turn. |
+| `graderTimeoutMs` | `60000` (1 min) | One grader turn. |
+| `gateBudgetMs` | `90000` (90 s) | The whole acceptance gate. |
+
+Each budget is per **ladder attempt**, not per delegation: a fast → medium → heavy
+escalation gives every attempt its own fresh clock. On expiry the child session is
+cancelled for real via `session.abort` rather than left running, and the attempt is
+recorded as failed so the ladder advances — an expired budget never yields a fabricated
+pass, only an honest `status: unmet`.
+
+Raise a ceiling rather than removing it; `0` and negative values are rejected by
+`validateConfig`, not read as "no timeout".
+
+```jsonc
+{
+  "enforcement": {
+    "verify": {
+      // A slow local model needs longer than the 10-minute default.
+      "delegateTimeoutMs": 1800000
+    }
+  }
+}
+```
+
+Full field notes are in [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md).
+
 ### Deep-dive documentation
 
 - `docs/ENFORCEMENT.md` — architecture, hook wiring, session lifecycle
@@ -781,7 +884,7 @@ Advisory is the default. To change the level:
 
 | Command | Description |
 |---------|-------------|
-| `/tiers` | Show active tier configuration, models, and rules |
+| `/tiers` | Show active tier configuration, models, rules, and each tier's resolved prompt style |
 | `/preset` | List available presets |
 | `/preset <name>` | Switch preset (e.g., `/preset openai`) |
 | `/budget` | Show available modes and which is active |
@@ -789,6 +892,7 @@ Advisory is the default. To change the level:
 | `/annotate-plan [path]` | Annotate a plan file with `[tier:X]` tags for each step |
 | `/router overrides` | Show the global + project override file paths and merge precedence |
 | `/router enforce <off\|advisory\|enforced>` | Set delegation-enforcement mode (persisted) |
+| `/router` | With no subcommand — or an unrecognized one — prints the `/router` help and the current enforcement mode |
 | `/bypass [on\|off]` | Toggle the router off/on for the session |
 
 ## Plan annotation

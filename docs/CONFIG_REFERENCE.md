@@ -29,6 +29,18 @@ gets any of them wrong.
 | `fallback` | `FallbackConfig` (optional) | `global` chains for the four provider presets | Provider fallback chains, either `global` (keyed by provider) or `presets` (keyed by preset, then provider). Rendered into the protocol's `Chain:` line. |
 | `enforcement` | object (optional) | shipped explicitly at the previous defaults | The verification/acceptance layer. Documented in the rest of this file. |
 
+The next keys are **not in the bundled `tiers.json`** — they are override-only and opt-in.
+`validateConfig` accepts them wherever they appear, but absent means the feature is off (or
+falls back to its in-code default), so you only ever see them in an overrides file.
+
+| Key | Type | Default when absent | Notes |
+|---|---|---|---|
+| `tierPromptsGoalOriented` | `Record<string, string>` | built-in goal-oriented prompts in `src/router/prompts.ts` | Goal-oriented twin of `tierPrompts`; an entry replaces the built-in for that tier. See [Prompt styles](#prompt-styles-promptstyle). |
+| `modelGenerations` | `{ claude5x?: string[]; strong?: string[] }` | `DEFAULT_CLAUDE5X_PATTERNS` / `DEFAULT_STRONG_MODEL_PATTERNS` in `src/router/config.ts` | Shared model-ID substring pattern lists. `strong` drives `promptStyle: "auto"` resolution. |
+| `subagentTiers` | `Record<string, string>` | `{}` — no pre-existing agent is touched | Opt-in map of your own subagent names to tier names, repointing them at the active preset's model for that tier. Unknown tier names are skipped at resolve time rather than rejected. |
+| `antiNarration` | `boolean` | `false` | Adds the anti-narration clause to Claude tier prompts and enables the non-blocking narration detector. |
+| `experimental` | `{ verifiedDelegateTool?: boolean }` | `{}` — every experimental feature off | Opt-in features. `verifiedDelegateTool` exposes the independently-verified `delegate` tool, also settable via `MODEL_ROUTER_VERIFIED_DELEGATE=1`. |
+
 ---
 
 ## `enforcement` top-level fields
