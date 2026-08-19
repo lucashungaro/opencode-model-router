@@ -26,7 +26,7 @@ gets any of them wrong.
 | `modes` | `Record<string, ModeConfig>` (optional) | `normal`, `budget`, `quality`, `deep` | Named routing profiles. Each is `{ defaultTier, description, overrideRules? }`: `defaultTier` replaces the top-level one while the mode is active, `description` is what `/router mode` prints, and a non-empty `overrideRules` replaces the `rules` list for that mode and also suppresses the multi-phase decomposition hint, which would otherwise conflict with it. `validateConfig` checks the shape of every entry. |
 | `tierPrompts` | `Record<string, string>` (optional) | one prompt per tier | Global prescriptive tier prompts. A preset-level `tier.prompt` overrides the entry for that tier. See [Prompt styles](#prompt-styles-promptstyle) for the goal-oriented counterpart. |
 | `tierCaps` | `Record<string, number>` (optional) | `fast: 8`, `medium: 5`, `heavy: 3` | Read-only tool-call baselines per tier, enforced at runtime through cap banners. |
-| `fallback` | `FallbackConfig` (optional) | `global` chains for the four provider presets | Provider fallback chains, either `global` (keyed by provider) or `presets` (keyed by preset, then provider). Rendered into the protocol's `Chain:` line. |
+| `fallback` | `FallbackConfig` (optional) | `global` chains for the four provider presets | Provider fallback chains, either `global` (keyed by provider) or `presets` (keyed by preset, then provider). Rendered into the protocol's `Chain:` line. A chain keyed by a provider the active preset never routes to is **dormant by design** and is not validated against the catalog — the shipped chains cover every provider, so on a single-provider install most of them are inert. A chain entry naming a preset that does not exist is still reported, since that is a config error whatever your providers are. |
 | `enforcement` | object (optional) | shipped explicitly at the previous defaults | The verification/acceptance layer. Documented in the rest of this file. |
 
 The next keys are **not in the bundled `tiers.json`** — they are override-only and opt-in.
@@ -309,6 +309,26 @@ fails safe toward the more explicit prompt.
 
 Non-string entries inside the arrays are ignored at match time rather than rejected at
 load, so one bad entry in an override file cannot drop the whole layer.
+
+### When a dead pattern is reported
+
+A pattern matching no model your configured providers serve can silently change which
+prompt style `auto` picks. `/router models` and the passive startup check report those,
+but only when the report is actionable:
+
+| Where the pattern comes from | Reported when |
+|---|---|
+| `modelGenerations.strong` you wrote | Always — an explicit list is a claim about your environment, so a dead entry in it is yours to fix. |
+| The shipped default list | Only when a **near-miss** exists: a served model that matches once `.`, `-` and `_` are normalized away (`opus-4-8` vs a served `opus-4.8`). |
+
+The default list is a cross-provider union, so on any single-provider install most of it
+is unserved — `claude-mythos-5` on an anthropic-only setup is not a problem, it is a model
+that provider does not sell. Without near-miss evidence there is nothing to act on, so
+nothing is said. The separator-drift case is the rename this check exists to catch, and it
+is still reported, with the served id named.
+
+Reporting is gated on at least one tier resolving its style by `auto`; with every tier
+pinned to an explicit style the pattern list decides nothing.
 
 ### Which shipped presets are affected
 

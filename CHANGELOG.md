@@ -31,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Orphaned-pattern warnings the user could not act on.** A pattern from the shipped
+  default list is now reported only when a near-miss proves the model is served under a
+  drifted separator; a pattern you wrote in `modelGenerations.strong` is still always
+  reported. An anthropic-only install no longer warns that `claude-mythos-5` matches
+  nothing — that provider simply does not sell it.
+
+- **Dormant fallback chains reported as broken.** `fallback-provider-unknown` now fires
+  only when the active preset actually routes to that provider. The shipped chains cover
+  every provider, so a single-provider install was warning about chains that are inert by
+  design. Chain entries naming a preset that does not exist are still reported.
+
 - Removed a stale `buildAgentOptions` from `src/commands/output.ts`. It was live when
   the presentation layer was extracted, but `src/router/agent-options.ts` later became
   the real implementation and gained `effort` handling. The orphan was reachable only
