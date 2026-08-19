@@ -570,8 +570,10 @@ Each tier (`@fast`, `@medium`, `@heavy`) has a system prompt that describes its 
 **Resolution order per tier:**
 
 1. If the preset's tier defines `"prompt": "..."` inline → use it (per-tier override).
-2. Otherwise → fall back to `tierPrompts[<tierName>]`.
+2. Otherwise → fall back to the default for the tier's **prompt style**: `tierPromptsGoalOriented[<tierName>]` (or the built-in goal-oriented default) when the tier resolves to `goal-oriented`, else `tierPrompts[<tierName>]`.
 3. If neither is set → the tier registers without a system prompt.
+
+Two wordings of every default prompt ship: the enumerated `tierPrompts` above, and a shorter goal-oriented set. Which one a tier gets is decided by `promptStyle`, which defaults to `auto` (goal-oriented for strong models). See [Prompt styles](docs/CONFIG_REFERENCE.md#prompt-styles-promptstyle) in the config reference — including which shipped presets are affected.
 
 **When to customize:** if a specific provider/model in a preset needs different instructions (e.g. Gemini-specific tool format, tighter/looser caps for a weaker local model), add `"prompt": "..."` on that tier only. All other presets keep using the global.
 
@@ -669,7 +671,8 @@ When `antiNarration` is enabled, the detector runs for all models (not only Clau
 | `reasoning` | object | OpenAI reasoning: `{ "effort": "high", "summary": "detailed" }` |
 | `description` | string | Shown in `/tiers` output |
 | `steps` | number | Max agent turns |
-| `prompt` | string | Optional per-tier system prompt override. Falls back to top-level `tierPrompts[<tierName>]` when omitted. |
+| `prompt` | string | Optional per-tier system prompt override. Falls back to the style-appropriate default when omitted. |
+| `promptStyle` | string | `"prescriptive"`, `"goal-oriented"` or `"auto"` (default). Picks which default prompt the tier gets; ignored when `prompt` is set. |
 | `whenToUse` | string[] | Use cases (shown in `/tiers`, not in system prompt) |
 
 ### Fallback

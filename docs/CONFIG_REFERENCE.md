@@ -183,6 +183,111 @@ the offending value), because agent registration re-runs on every `config` hook.
 
 ---
 
+## Prompt styles (`promptStyle`)
+
+Every tier default prompt ships in two wordings. `promptStyle` picks which one a tier is
+registered with. It is a **per-tier** field and lives next to `model` in a preset:
+
+```jsonc
+{
+  "presets": {
+    "anthropic": {
+      "heavy": { "model": "anthropic/claude-opus-4-8", "promptStyle": "auto" }
+    }
+  }
+}
+```
+
+| Style | What the tier receives |
+|---|---|
+| `prescriptive` | The enumerated `tierPrompts[<tier>]` string from `tiers.json` — explicit STOP CONDITIONS, numbered rules. Better for weaker models that need the steps spelled out. |
+| `goal-oriented` | A shorter goal + constraints prompt: `tierPromptsGoalOriented[<tier>]` if configured, else the built-in default in `src/router/prompts.ts`, else `tierPrompts[<tier>]`. |
+| `auto` (default) | `goal-oriented` when the tier's model matches the strong-model pattern list, otherwise `prescriptive`. |
+
+An explicit `prompt` on the tier still wins over both — `promptStyle` only selects which
+*default* applies. A tier with no prompt in either style registers without a system
+prompt, exactly as before.
+
+### The `auto` rule
+
+`auto` matches the tier's `model` string against `modelGenerations.strong`, as a
+**case-insensitive substring** test. Any match makes the model "strong".
+
+| Field | Type | Default |
+|---|---|---|
+| `modelGenerations.strong` | `string[]` | `["claude-fable-5", "claude-mythos-5", "opus-4-8"]` |
+| `modelGenerations.claude5x` | `string[]` | `["claude-fable-5", "claude-mythos-5"]` |
+
+`strong` is a superset of `claude5x` by construction: every Claude 5.x model is treated as
+a strong model. Setting either key **replaces** the default list rather than extending it,
+so `"strong": []` disables auto-detection entirely and every tier falls back to
+`prescriptive`. A missing or empty model ID also resolves to `prescriptive` — the rule
+fails safe toward the more explicit prompt.
+
+Non-string entries inside the arrays are ignored at match time rather than rejected at
+load, so one bad entry in an override file cannot drop the whole layer.
+
+### Which shipped presets are affected
+
+No bundled preset sets `promptStyle`, so every tier resolves through `auto`. Against the
+shipped `tiers.json` that is **five tiers** now receiving the goal-oriented prompt:
+
+| Preset / tier | Model | Resolved style |
+|---|---|---|
+| `anthropic.heavy` | `anthropic/claude-opus-4-8` | `goal-oriented` |
+| `hybrid.heavy` | `anthropic/claude-opus-4-8` | `goal-oriented` |
+| `fable-effort.fast` | `anthropic/claude-fable-5` | `goal-oriented` |
+| `fable-effort.medium` | `anthropic/claude-fable-5` | `goal-oriented` |
+| `fable-effort.heavy` | `anthropic/claude-fable-5` | `goal-oriented` |
+
+Everything else stays `prescriptive`, including `github-copilot.heavy`
+(`claude-opus-4.6` does not match the `opus-4-8` pattern). To keep the previous wording on
+a strong-model tier, set `"promptStyle": "prescriptive"` on it — either in the preset or in
+an overrides file.
+
+### Size of the switch
+
+Measured character counts of the two default sets:
+
+| Tier | `prescriptive` | `goal-oriented` | Delta |
+|---|---|---|---|
+| `fast` | 1959 | 1117 | −842 (−43.0%) |
+| `medium` | 2221 | 1482 | −739 (−33.3%) |
+| `heavy` | 2408 | 1464 | −944 (−39.2%) |
+
+Both sets keep the same machine-readable contract: the `DONE:` / `NEED MORE:` /
+`NEED CONTEXT:` / `SCOPE GROWTH:` / `ESCALATE:` return tokens, the `CAP:N` and `CAP:none`
+directives, and the `[cap: N/MAX]` and redundancy markers. The counts are pinned by
+`test/unit/prompt-style.test.ts`.
+
+### Overriding the goal-oriented defaults
+
+`tierPromptsGoalOriented` is the goal-oriented twin of `tierPrompts`: a top-level
+`Record<string, string>` keyed by tier name, replacing the built-in default for that tier.
+
+```jsonc
+{
+  "tierPromptsGoalOriented": {
+    "heavy": "You are @heavy — your goal is …"
+  }
+}
+```
+
+### Enforcement is unaffected
+
+Prompt text is advisory. Read-only caps come from `tierCaps` (and `DEFAULT_TIER_CAPS`), and
+the only text the cap parser reads is the **dispatch text** of a task — never the tier
+system prompt. Switching styles cannot change a cap, a banner, or a guard decision; this is
+pinned by `test/unit/guard-style-independence.test.ts`.
+
+### Validation
+
+- `promptStyle` must be one of `prescriptive`, `goal-oriented`, `auto` — a typo throws at load.
+- `tierPromptsGoalOriented` must be an object of strings.
+- `modelGenerations` must be an object; `claude5x` and `strong` must be arrays when present.
+
+---
+
 ## What the bundled `tiers.json` ships
 
 The bundled file ships an explicit `enforcement` block. **Every value in it equals the
