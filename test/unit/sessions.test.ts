@@ -383,9 +383,12 @@ describe("classifyTrivial", () => {
     expect(classifyTrivial(long, "fast", fullCfg)).toBe(false);
   });
 
-  it("the plugin's cwd/platform footer alone does not defeat trivial", () => {
-    // ac206ab appends this footer to every dispatch prompt. A POSIX cwd must not
-    // be counted as a target file, and the footer must not blow the length gate.
+  it("the cwd/platform footer alone does not defeat trivial", () => {
+    // Dispatch prompts commonly arrive with this footer. It is NOT emitted by
+    // this plugin -- it comes from the host/orchestrator prompt conventions --
+    // which is exactly why PATH_TOKEN_RE requires a file extension: a POSIX cwd
+    // must not be counted as a target file, and the footer must not blow the
+    // length gate.
     const withFooter =
       "read package.json and tell me the version" +
       "\n\nWorking directory: /home/u/proj\nPlatform: linux\nShell: bash";
@@ -401,6 +404,77 @@ describe("classifyTrivial", () => {
       "tsconfig.json, then tiers.json, then LICENSE, then src/index.ts. Use the " +
       "read tool separately for each file; do not skip any.";
     expect(classifyTrivial(smokePrompt, "fast", fullCfg)).toBe(false);
+  });
+
+  // --- zero-path recon holes: breadth that names no extensioned file ---
+
+  it("directory-level recon enumerating 3 subjects => false (enumeration gate)", () => {
+    // Names no file at all, so the path count cannot catch it.
+    expect(
+      classifyTrivial(
+        "search the src directory structure and report how router, guard and verify are organized",
+        "fast",
+        fullCfg,
+      ),
+    ).toBe(false);
+  });
+
+  it("extensionless real files count as paths => false", () => {
+    expect(
+      classifyTrivial(
+        "read Makefile, LICENSE and Dockerfile and summarize the build",
+        "fast",
+        fullCfg,
+      ),
+    ).toBe(false);
+  });
+
+  it("a single extensionless file is still trivial", () => {
+    expect(classifyTrivial("read Makefile and tell me the default target", "fast", fullCfg)).toBe(
+      true,
+    );
+  });
+
+  it("'license' as a prose word is not a path (case-sensitive gate)", () => {
+    expect(
+      classifyTrivial("read the license field in package.json", "fast", fullCfg),
+    ).toBe(true);
+  });
+
+  it("semicolon-chained greps => false (connector gate)", () => {
+    expect(
+      classifyTrivial("grep for foo; grep for bar", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("&&-chained greps => false (connector gate)", () => {
+    expect(
+      classifyTrivial("grep for foo && grep for bar", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("'Step 1: ... Step 2: ...' => false (step marker with colon)", () => {
+    expect(
+      classifyTrivial("Step 1: read the config. Step 2: report the value", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("colon-numbered list at line start => false", () => {
+    expect(
+      classifyTrivial("read the following:\n1: the config\n2: the manifest", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("two imperative lines => false (prose task list)", () => {
+    expect(
+      classifyTrivial("search for the handler\nreport what it returns", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("two-item comma phrase is not an enumeration (stays trivial)", () => {
+    // Only 3+ items signal breadth; two items are common in single-shot asks and
+    // a genuine two-file ask is already caught by the path count.
+    expect(classifyTrivial("grep for the handler, quickly", "fast", fullCfg)).toBe(true);
   });
 });
 

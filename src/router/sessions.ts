@@ -166,24 +166,67 @@ function normTaskKw(kw: string): string {
 
 /**
  * A dispatch is "multi-step" when its text describes a sequence rather than one
- * lookup: an ordered/bulleted list item, or an explicit sequencing/distributive
- * word. These are the cheapest reliable signals that the subagent is expected to
- * make several tool calls, which is exactly the case proportional bypass must
- * NOT exempt from enforcement.
+ * lookup: an ordered/bulleted/step list item, an explicit sequencing or
+ * distributive word, or shell-style command chaining (`;`, `&&`). These are the
+ * cheapest reliable signals that the subagent is expected to make several tool
+ * calls, which is exactly the case proportional bypass must NOT exempt from
+ * enforcement.
+ *
+ * List markers accept `1.`, `1)` and `1:` because "Step 1: ... Step 2: ..." is a
+ * common phrasing; `step N` is also matched inline, since it frequently appears
+ * mid-line rather than at the start of one.
  */
 const MULTI_STEP_RE =
-  /(?:^\s*(?:[-*+]|\d+[.)])\s)|\bthen\b|\bone at a time\b|\bone-at-a-time\b|\bsequentially\b|\bin order\b|\bin this exact order\b|\beach\b|\bafter that\b|\bfor every\b/im;
+  /(?:^\s*(?:[-*+]|\d+[.):])\s)|\bstep\s*\d+\s*[.):]|\bthen\b|\bone at a time\b|\bone-at-a-time\b|\bsequentially\b|\bin order\b|\bin this exact order\b|\beach\b|\bafter that\b|\bfor every\b|;|&&/im;
+
+/**
+ * An enumeration of three or more named subjects ("router, guard and verify")
+ * describes breadth even when no file is named and no sequencing word appears.
+ * Two items are deliberately NOT enough: "read a.json, b.json" is already caught
+ * by the path count, and a two-item phrase is common in single-shot requests.
+ */
+const ENUMERATION_RE =
+  /[\w./-]+\s*,\s*[\w./-]+\s*(?:,\s*[\w./-]+|\b(?:and|or)\s+[\w./-]+)/i;
+
+/**
+ * Lines that open with an imperative verb. Two or more of them is a task list
+ * written as prose. Matched per line so the `Working directory:` / `Platform:` /
+ * `Shell:` footer described below cannot inflate the count.
+ */
+const IMPERATIVE_LINE_RE =
+  /^\s*(?:read|search|grep|list|find|check|report|summari[sz]e|open|inspect|show|tell|explain|analy[sz]e|compare|verify|count|locate|trace)\b/i;
 
 /**
  * File-path-like tokens, counted to detect multi-file recon. Deliberately
- * requires a known file EXTENSION rather than accepting any slashed path: the
- * plugin appends a `Working directory: <cwd>` footer to dispatch prompts, and a
- * POSIX cwd (`/home/u/proj`) must not be miscounted as a target file.
+ * requires a known file EXTENSION rather than accepting any slashed path.
+ *
+ * Dispatch prompts commonly arrive with a `Working directory: <cwd>` footer.
+ * That footer is NOT emitted by this plugin — nothing in this repo writes it; it
+ * comes from the host/orchestrator's own prompt conventions. Requiring an
+ * extension is what keeps a POSIX cwd (`/home/u/proj`) from being miscounted as
+ * a target file.
  */
 const PATH_TOKEN_RE =
   /[\w./\\-]*[\w-]\.(?:ts|tsx|js|jsx|mjs|cjs|json|jsonc|md|ya?ml|toml|txt|css|scss|html|py|rs|go|rb|java|sh|ps1|sql|lock)\b/gi;
 
-/** At most this many distinct target files still counts as a single-shot lookup. */
+/**
+ * Well-known extensionless files, which `PATH_TOKEN_RE` cannot see. Matched
+ * case-SENSITIVELY against the raw text so the conventional capitalisation is
+ * required: "read Makefile and LICENSE" names two files, while "read the license
+ * field in package.json" names one. The lookahead prevents double-counting
+ * `README.md`, which `PATH_TOKEN_RE` already matches.
+ */
+const BARE_FILENAME_RE =
+  /\b(?:Makefile|Dockerfile|LICENSE|README|CHANGELOG|Gemfile|Rakefile|Procfile|NOTICE|CODEOWNERS)\b(?!\.\w)/g;
+
+/**
+ * At most this many distinct target files still counts as a single-shot lookup.
+ *
+ * Zero paths is deliberately still eligible: "search the codebase for X" and
+ * "grep for the handler" name no file yet are the canonical cheap lookups, and
+ * requiring exactly one path would reclassify them. Breadth that names no file
+ * is caught by `ENUMERATION_RE` and `IMPERATIVE_LINE_RE` instead.
+ */
 const MAX_TRIVIAL_PATHS = 1;
 
 /**
@@ -204,8 +247,10 @@ const MAX_TRIVIAL_CHARS = 240;
  *   2. the text is non-empty, and
  *   3. it carries NO medium/heavy taskPattern signal, and
  *   4. it matches a fast taskPattern stem, and
- *   5. it names at most `MAX_TRIVIAL_PATHS` distinct file paths, and
- *   6. it carries no multi-step marker (`MULTI_STEP_RE`), and
+ *   5. it names at most `MAX_TRIVIAL_PATHS` distinct file paths, counting both
+ *      extensioned paths and well-known extensionless files, and
+ *   6. it carries no multi-step marker (`MULTI_STEP_RE`), no 3+ item
+ *      enumeration (`ENUMERATION_RE`), and no second imperative line, and
  *   7. it is at most `MAX_TRIVIAL_CHARS` long.
  *
  * Clauses 5-7 are the narrowing. Without them ANY `fast` dispatch containing a
@@ -234,11 +279,23 @@ export function classifyTrivial(
   }
 
   // Shape gates: a single-shot lookup is short, names at most one file, and
-  // does not enumerate steps. Checked before the fast-stem match so that a
-  // multi-file recon prompt can never be rescued by containing "read".
+  // does not enumerate steps or subjects. Checked before the fast-stem match so
+  // that a multi-file recon prompt can never be rescued by containing "read".
   if (raw.length > MAX_TRIVIAL_CHARS) return false;
   if (MULTI_STEP_RE.test(raw)) return false;
-  const paths = new Set((text.match(PATH_TOKEN_RE) ?? []).map((p) => p.trim()));
+  if (ENUMERATION_RE.test(raw)) return false;
+
+  const imperativeLines = raw
+    .split(/\r?\n/)
+    .filter((line) => IMPERATIVE_LINE_RE.test(line)).length;
+  if (imperativeLines > 1) return false;
+
+  const paths = new Set<string>(
+    (text.match(PATH_TOKEN_RE) ?? []).map((p) => p.trim()),
+  );
+  for (const bare of raw.match(BARE_FILENAME_RE) ?? []) {
+    paths.add(bare.toLowerCase());
+  }
   if (paths.size > MAX_TRIVIAL_PATHS) return false;
 
   const fast = cfg.taskPatterns?.fast ?? [];

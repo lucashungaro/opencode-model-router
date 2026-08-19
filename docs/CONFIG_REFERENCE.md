@@ -122,18 +122,26 @@ trivial only when *all* of the following hold (see `classifyTrivial` in
 2. the dispatch text is non-empty;
 3. it carries no `taskPatterns.medium` / `taskPatterns.heavy` signal;
 4. it matches a `taskPatterns.fast` stem (`read`, `search`, `grep`, …);
-5. it names **at most one** file path;
-6. it carries **no multi-step marker** — an ordered/bulleted list item, or one of
-   `then`, `one at a time`, `sequentially`, `in order`, `each`, `after that`,
-   `for every`;
-7. it is **at most 240 characters** long.
+5. it names **at most one** file path — counting both extensioned paths
+   (`src/index.ts`) and well-known extensionless files (`Makefile`, `LICENSE`,
+   `Dockerfile`, …, matched case-sensitively so "the license field" is prose, not
+   a file);
+6. it carries **no multi-step marker**. Markers include an ordered/bulleted/step
+   list item (`1.`, `1)`, `1:`, `- `, `Step 2:`), a sequencing or distributive
+   word (`then`, `one at a time`, `sequentially`, `in order`, `each`,
+   `after that`, `for every`), and shell-style chaining (`;`, `&&`). This list is
+   illustrative, not exhaustive — see `MULTI_STEP_RE` for the authoritative set;
+7. it contains **no enumeration of three or more subjects** (`router, guard and
+   verify`) and **no second imperative line** — both signal breadth even when no
+   file is named;
+8. it is **at most 240 characters** long.
 
 So `read package.json and tell me the version` is trivial and is exempted from
 enforced-mode hard blocks, while `read README.md, then package.json, then
 src/index.ts, one at a time` is **not** — it is multi-file, sequenced recon, and
 stays fully enforced.
 
-> Clauses 5–7 were added to fix a bug in which *any* `fast` dispatch containing a
+> Clauses 5–8 were added to fix a bug in which *any* `fast` dispatch containing a
 > stem like `read` was trivial. That exempted multi-file recon from enforcement,
 > so the `read_budget` guard could never hard-block a `@fast` subagent — the exact
 > runaway it exists to bound. Setting `trivialBypass: false` disables the exemption
