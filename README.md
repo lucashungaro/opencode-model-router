@@ -381,7 +381,7 @@ highest first:
 |---|---|---|
 | Anthropic | `options.effort`, incl. `xhigh`/`max` | Requires the `opencode-anthropic-fix` plugin (commit `307aea9`+ for fable/mythos). Non-adaptive Claude models (e.g. haiku) silently strip `effort` at the API layer, and without the plugin a top-level `effort` can break Claude-Code billing fingerprinting. |
 | OpenAI | `options.reasoning_effort` | Supports only `low`/`medium`/`high`; `xhigh` and `max` are downgraded to `high` with a warning. |
-| Other (Google, Copilot, …) | nothing | Dropped with a warning — no known mapping. |
+| Other (Google, …) | nothing | Dropped with a warning — no known mapping. Detection is by model family, not provider prefix, so Copilot-proxied ids (`github-copilot/gpt-4o`, `github-copilot/claude-sonnet-4`) take their family's knob above. |
 
 An out-of-set value in `tiers.json` fails validation at load; one that arrives any other
 way is ignored with a single warning. Full detail in

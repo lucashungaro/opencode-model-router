@@ -24,7 +24,7 @@ gets any of them wrong.
 | `defaultTier` | `string` | `"medium"` | The tier used when nothing else selects one — no `[tier:X]` tag, no task-pattern match, no mode `defaultTier`. A mode's own `defaultTier` wins over this one; `src/index.ts` falls back to `"medium"` if the key is somehow absent. `validateConfig` requires it to be a string. |
 | `taskPatterns` | `Record<string, string[]>` (optional) | `fast`/`medium`/`heavy` keyword lists | Per-tier keyword lists that teach the orchestrator which work belongs to which tier. `buildTaskTaxonomy` in `src/router/protocol.ts` renders them into the protocol's `R:` line, joining each tier's keywords with `/`; an empty or absent object drops that line entirely. |
 | `modes` | `Record<string, ModeConfig>` (optional) | `normal`, `budget`, `quality`, `deep` | Named routing profiles. Each is `{ defaultTier, description, overrideRules? }`: `defaultTier` replaces the top-level one while the mode is active, `description` is what `/router mode` prints, and a non-empty `overrideRules` replaces the `rules` list for that mode and also suppresses the multi-phase decomposition hint, which would otherwise conflict with it. `validateConfig` checks the shape of every entry. |
-| `tierPrompts` | `Record<string, string>` (optional) | one prompt per tier | Global rule-based tier prompts. A preset-level `tier.prompt` overrides the entry for that tier. See [Prompt styles](#prompt-styles-promptstyle) for the goal-oriented counterpart. |
+| `tierPrompts` | `Record<string, string>` (optional) | one prompt per tier | Global prescriptive tier prompts. A preset-level `tier.prompt` overrides the entry for that tier. See [Prompt styles](#prompt-styles-promptstyle) for the goal-oriented counterpart. |
 | `tierCaps` | `Record<string, number>` (optional) | `fast: 8`, `medium: 5`, `heavy: 3` | Read-only tool-call baselines per tier, enforced at runtime through cap banners. |
 | `fallback` | `FallbackConfig` (optional) | `global` chains for the four provider presets | Provider fallback chains, either `global` (keyed by provider) or `presets` (keyed by preset, then provider). Rendered into the protocol's `Chain:` line. |
 | `enforcement` | object (optional) | shipped explicitly at the previous defaults | The verification/acceptance layer. Documented in the rest of this file. |
@@ -253,7 +253,13 @@ knob (`low | medium | high` only) and it is also what `/tiers` renders.
 |---|---|---|
 | Anthropic (`isClaudeModel`) | `options.effort` verbatim, including `xhigh` and `max`. | Requires the `opencode-anthropic-fix` plugin (commit `307aea9`+ for fable/mythos). Non-adaptive Claude models (e.g. haiku) silently strip `effort` at the API layer, and without that plugin a top-level `effort` can break Claude-Code billing fingerprinting. |
 | OpenAI (`openai/…`, `gpt-…`, `o1`/`o3`/`o4`) | `options.reasoning_effort`. | `reasoning_effort` only supports `low`, `medium`, `high`. `xhigh` and `max` are **downgraded to `high`** with a one-time warning per tier+level. |
-| Anything else (Google, Copilot, …) | nothing. | `effort` is dropped with a one-time warning naming the model — the field has no known mapping there. |
+| Anything else (Google, …) | nothing. | `effort` is dropped with a one-time warning naming the model — the field has no known mapping there. |
+
+Detection is by model *family*, not by provider prefix: `isClaudeModel` matches any
+`/claude-` segment and `isOpenAIModel` matches `\bgpt-` (plus `openai/…` and
+`o1`/`o3`/`o4`). Copilot-proxied ids therefore land in the rows above —
+`github-copilot/gpt-4o` gets `reasoning_effort`, `github-copilot/claude-sonnet-4` gets
+`effort`. Only a model matching no family pattern at all falls through to the last row.
 
 Warnings are emitted once per distinct problem (keyed by tier and, where it matters, by
 the offending value), because agent registration re-runs on every `config` hook.
