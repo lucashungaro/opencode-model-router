@@ -35,6 +35,31 @@ export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
+/**
+ * Wording style of the default system prompt handed to a tier agent.
+ *
+ * `prescriptive` uses the enumerated `tierPrompts` from tiers.json; `goal-oriented`
+ * uses the goal + constraints defaults in `src/router/prompts.ts`; `auto` (the
+ * default when unset) picks goal-oriented for strong models and prescriptive for
+ * the rest.
+ */
+export const PROMPT_STYLES = ["prescriptive", "goal-oriented", "auto"] as const;
+
+export type PromptStyle = (typeof PROMPT_STYLES)[number];
+
+/**
+ * Shared model-generation pattern lists, matched case-insensitively as substrings
+ * of a tier's model ID.
+ */
+export interface ModelGenerationsConfig {
+  claude5x?: string[];
+  strong?: string[];
+}
+
+export const DEFAULT_CLAUDE5X_PATTERNS = ["claude-fable-5", "claude-mythos-5"];
+// NOTE: strong is a superset of claude5x by construction — editing DEFAULT_CLAUDE5X_PATTERNS also widens strong. Deliberate: every Claude 5.x model is a strong model.
+export const DEFAULT_STRONG_MODEL_PATTERNS = [...DEFAULT_CLAUDE5X_PATTERNS, "opus-4-8"];
+
 export interface TierConfig {
   model: string;
   variant?: string;
@@ -52,6 +77,11 @@ export interface TierConfig {
   description?: string;
   steps?: number;
   prompt?: string;
+  /**
+   * Wording style of the default prompt for this tier. Ignored when `prompt` is
+   * set — an explicit per-tier prompt always wins. Defaults to `auto`.
+   */
+  promptStyle?: PromptStyle;
   /** Optional use-case hints shown in `/tiers`. */
   whenToUse?: string[];
 }
@@ -96,6 +126,14 @@ export interface RouterConfig {
   modes?: Record<string, ModeConfig>;
   /** Global default prompts per tier name. A preset-level tier.prompt overrides this. */
   tierPrompts?: Record<string, string>;
+  /**
+   * Optional user overrides for the goal-oriented tier prompts. The defaults ship
+   * in code (`src/router/prompts.ts`); an entry here replaces the built-in for
+   * that tier name.
+   */
+  tierPromptsGoalOriented?: Record<string, string>;
+  /** Shared model-generation pattern lists; see {@link ModelGenerationsConfig}. */
+  modelGenerations?: ModelGenerationsConfig;
   /** Read-only tool-call caps per tier, enforced at runtime via tool.execute.after banner injection. */
   tierCaps?: Record<string, number>;
   enforcement?: EnforcementConfig;
@@ -311,6 +349,16 @@ function validatePresets(obj: Record<string, unknown>): Record<string, unknown> 
           `tiers.json: preset '${presetName}' tier '${tierName}': effort must be one of ${EFFORT_LEVELS.join(", ")}`,
         );
       }
+      // Same reasoning as effort: a typo'd style would otherwise load clean and
+      // silently fall back to the prescriptive prompt with nothing said.
+      if (
+        t.promptStyle !== undefined &&
+        !PROMPT_STYLES.some((style) => style === t.promptStyle)
+      ) {
+        throw new Error(
+          `tiers.json: preset '${presetName}' tier '${tierName}': promptStyle must be one of ${PROMPT_STYLES.join("|")}`,
+        );
+      }
     }
   }
 
@@ -409,6 +457,43 @@ function validateTierPrompts(obj: Record<string, unknown>): void {
         throw new Error(
           `tiers.json: tierPrompts.'${tierName}' must be a string`,
         );
+      }
+    }
+  }
+}
+
+function validateTierPromptsGoalOriented(obj: Record<string, unknown>): void {
+  // Validate tierPromptsGoalOriented if present
+  if (obj.tierPromptsGoalOriented !== undefined) {
+    if (!isPlainObject(obj.tierPromptsGoalOriented)) {
+      throw new Error("tiers.json: 'tierPromptsGoalOriented' must be an object");
+    }
+    const tp = obj.tierPromptsGoalOriented as Record<string, unknown>;
+    for (const [tierName, prompt] of Object.entries(tp)) {
+      if (typeof prompt !== "string") {
+        throw new Error(
+          `tiers.json: tierPromptsGoalOriented.'${tierName}' must be a string`,
+        );
+      }
+    }
+  }
+}
+
+function validateModelGenerations(obj: Record<string, unknown>): void {
+  // Validate modelGenerations if present. Element-level non-strings are tolerated
+  // and filtered at match time rather than rejected here, so one bad entry in an
+  // override file cannot drop the whole layer.
+  if (obj.modelGenerations !== undefined) {
+    if (!isPlainObject(obj.modelGenerations)) {
+      throw new Error("tiers.json: modelGenerations must be an object");
+    }
+    const modelGenerations = obj.modelGenerations as Record<string, unknown>;
+    for (const key of ["claude5x", "strong"] as const) {
+      if (
+        modelGenerations[key] !== undefined &&
+        !Array.isArray(modelGenerations[key])
+      ) {
+        throw new Error(`tiers.json: modelGenerations.${key} must be an array`);
       }
     }
   }
@@ -679,6 +764,8 @@ export function validateConfig(raw: unknown): RouterConfig {
   validateModes(obj);
   validateTierCaps(obj);
   validateTierPrompts(obj);
+  validateTierPromptsGoalOriented(obj);
+  validateModelGenerations(obj);
   validateTaskPatterns(obj);
   validateEnforcement(obj);
 
