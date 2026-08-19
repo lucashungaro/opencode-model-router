@@ -12,6 +12,7 @@ import {
 } from "./router/config";
 import type { RouterConfig, TierConfig, Preset, ModeConfig } from "./router/config";
 import { buildAgentOptions, warnAgentOptionsEffortOnce } from "./router/agent-options";
+import { selectTierPrompt } from "./router/prompts";
 import {
   buildTiersOutput,
   buildPresetList,
@@ -854,8 +855,9 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       opencodeConfig.agent ??= {};
 
       for (const [name, tier] of Object.entries(activeTiers)) {
-        // Resolve prompt: per-tier override wins; otherwise fall back to global tierPrompts[name].
-        const resolvedPrompt = tier.prompt ?? cfg.tierPrompts?.[name];
+        // Resolve prompt: per-tier override wins; otherwise fall back to the
+        // style-appropriate default (goal-oriented or global tierPrompts[name]).
+        const resolvedPrompt = tier.prompt ?? selectTierPrompt(name, tier, cfg);
 
         // For Claude-backed tiers, prepend an adversarial opener that revokes
         // the cached "Claude Code exploratory agent" priming for this dispatch.
