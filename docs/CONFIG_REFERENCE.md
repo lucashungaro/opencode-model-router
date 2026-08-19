@@ -1,6 +1,6 @@
 # Enforcement Configuration Reference
 
-Optional `enforcement` block in `tiers.json`. Fully additive — omitting the block (or setting `mode: "off"`) is a strict no-op; the plugin behaves byte-for-byte as without the block.
+The `enforcement` block in `tiers.json`. Every field is optional; each one falls back to the default listed below, and the bundled `tiers.json` now **ships those defaults explicitly** so they are visible in the file rather than implicit in code — see [What the bundled `tiers.json` ships](#what-the-bundled-tiersjson-ships). Setting `mode: "off"` (or `MODEL_ROUTER_ENFORCE=0`) is a strict no-op.
 
 > These settings (like anything in `tiers.json`) can also be placed in an overrides file — `~/.config/opencode/opencode-model-router.overrides.jsonc` (global) or `<repo>/.opencode/opencode-model-router.overrides.jsonc` (project) — and are deep-merged over the bundled defaults, so you don't have to edit the cached `tiers.json`. See the **Configuration** section of the README.
 
@@ -12,7 +12,7 @@ Optional `enforcement` block in `tiers.json`. Fully additive — omitting the bl
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `mode` | `"off" \| "advisory" \| "enforced"` | `"off"` | Global enforcement mode. `off` = no-op. `advisory` = log violations, never block. `enforced` = block/escalate on violations. |
+| `mode` | `"off" \| "advisory" \| "enforced"` | `"advisory"` | Global enforcement mode. `off` = no-op. `advisory` = log violations, never block. `enforced` = block/escalate on violations. |
 | `envGate` | `string` | `"MODEL_ROUTER_ENFORCE"` | Name of the env var that overrides mode at runtime. See env-gate truth table below. |
 | `perTier` | `Record<string, "off" \| "advisory" \| "enforced">` | `{}` | Per-tier mode overrides. Keyed by tier name. Overrides base `mode` when the env gate is unset/empty. |
 | `guard` | object | see below | Request-level hard guards (caps, script controls, budget). |
@@ -39,12 +39,12 @@ Optional `enforcement` block in `tiers.json`. Fully additive — omitting the bl
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `require` | `"never" \| "whenDoDPresent" \| "always"` | `"whenDoDPresent"` | When to run a verification pass after production. |
+| `require` | `"never" \| "whenDoDPresent" \| "always"` | _(unset)_ | When to run a verification pass after production. Has no code-level default: when the key is absent the call sites read `undefined` and decide per dispatch, so the bundled `tiers.json` ships nothing for it. |
 | `requireExplicitDoD` | `boolean` | `false` | When `true`, a task with no explicit Definition of Done is treated as failing verification. |
 | `preferDeterministic` | `boolean` | _(auto)_ | Defaults to `true` whenever the DoD contains runnable checks; omit to let the router decide. |
 | `graderPolicy` | `"atLeastProducerTier"` | `"atLeastProducerTier"` | **Only valid value.** Grader tier = `max(producerTier, minGraderTier)` along the ladder; never below the producer. A deterministic check uses no grader. |
 | `graderTemperature` | `number` | `0` | Applied via the `chat.params` hook to grader sessions only. |
-| `minGraderTier` | `string` | _(none)_ | Optional floor for the grader tier, independent of producer. |
+| `minGraderTier` | `string \| null` | `null` | Optional floor for the grader tier, independent of producer. `null` means no floor and is identical to omitting the key. |
 
 > **Note:** `graderPolicy: "atLeastProducerTier"` ensures a cheap producer is never graded by an even cheaper model. A deterministic DoD check (shell command, test run, lint) skips the grader entirely.
 
@@ -107,6 +107,72 @@ Evaluated by `resolveEnforcementMode` on every dispatch.
 | `perTier` values must each be `off \| advisory \| enforced`. |
 | `guard.budget` must be a number ≥ 1. |
 | `guard.blockScriptWrites` must be a boolean. |
+| `envGate` must be a non-empty string. |
+| `guard.readDraftCap` and `guard.sameOpRetryCap` must each be an integer ≥ 0. |
+| `guard.blockSelfScript` and `guard.deliverableFirst` must each be a boolean. |
+| `verify.minGraderTier` must be a string or `null`. |
+| `verify.graderTemperature` must be a number ≥ 0. |
+| `verify.requireExplicitDoD` must be a boolean. |
+| `proportional.trivialBypass` must be a boolean. |
+
+An invalid value in the bundled `tiers.json` throws at load; the same value in an
+overrides file is reported via `console.warn` and that override layer is dropped.
+
+---
+
+## What the bundled `tiers.json` ships
+
+The bundled file ships an explicit `enforcement` block. **Every value in it equals the
+default the code already applied when the key was absent**, so shipping it changed no
+behaviour — it only makes the defaults readable and reviewable. `test/unit/enforcement-defaults.test.ts`
+pins this: it resolves the real policies from the shipped file and from the same file with
+`enforcement` deleted and requires the results to be identical.
+
+| Field | Shipped value | Applied by |
+|---|---|---|
+| `mode` | `"advisory"` | `src/router/enforcement.ts` — violations are logged, never blocked |
+| `envGate` | `"MODEL_ROUTER_ENFORCE"` | `src/router/enforcement.ts` (`DEFAULT_ENV_GATE`) |
+| `guard.budget` | `25` | `src/guard/enforce.ts` (`DEFAULT_GUARD_BUDGET`) |
+| `guard.readDraftCap` | `3` | `src/guard/enforce.ts` |
+| `guard.sameOpRetryCap` | `1` | `src/guard/enforce.ts` |
+| `guard.blockSelfScript` | `true` | `src/guard/enforce.ts` |
+| `guard.deliverableFirst` | `true` | `src/guard/enforce.ts` |
+| `guard.blockScriptWrites` | `false` | `src/guard/enforce.ts` |
+| `verify.minGraderTier` | `null` | `src/verify/wiring.ts` |
+| `verify.graderTemperature` | `0` | `src/index.ts` (`chat.params` hook, grader sessions only) |
+| `verify.requireExplicitDoD` | `false` | `src/router/protocol.ts` |
+| `escalate.ladder` | `["fast","medium","heavy"]` | `src/escalate/ladder.ts` |
+| `escalate.floorTier` | `null` | `src/escalate/ladder.ts` |
+| `escalate.maxAttemptsPerTier` | `1` | `src/escalate/ladder.ts` |
+| `escalate.maxTotalAttempts` | `4` | `src/escalate/ladder.ts` |
+| `escalate.costCeiling.multiple` | `4` | `src/escalate/ladder.ts` |
+| `proportional.trivialBypass` | `true` | `src/guard/enforce.ts` |
+
+Fields deliberately **not** shipped, because no code reads them and a written-down value
+would document a fiction: `verify.require` (no default — see above), `verify.graderPolicy`,
+`verify.preferDeterministic`, `proportional.trivialClassifier`, and
+`escalate.costCeiling.base`. These are validated when present but never consumed.
+
+### `mode` defaults to `advisory`, and what `enforced` would change
+
+With no `enforcement` block at all, the resolved mode is **`advisory`** — not `off`. In
+advisory mode every guard, ladder and verification rule is evaluated and reported in the
+scorecard, but nothing is ever blocked or retried.
+
+Changing `mode` to `"enforced"` turns those same evaluations into actions:
+
+- **Guards block.** A call that violates `readDraftCap`, `sameOpRetryCap`, `blockSelfScript`,
+  `deliverableFirst`, `blockScriptWrites` or `budget` is refused instead of noted.
+- **Verification gates acceptance.** A failed grader or deterministic check makes the
+  delegation `unmet` rather than accepted-with-a-note.
+- **The ladder escalates.** An `unmet` result retries and climbs `escalate.ladder`, bounded
+  by `maxAttemptsPerTier`, `maxTotalAttempts` and `costCeiling.multiple` — which costs real
+  tokens that advisory mode never spends.
+- **`proportional.trivialBypass` starts mattering.** It only has an effect in `enforced`
+  mode, where a task classified trivial is demoted back to advisory for that dispatch.
+
+`MODEL_ROUTER_ENFORCE=1` produces the same effect at runtime without editing the file, and
+`=0` forces `off`.
 
 ---
 
@@ -156,4 +222,7 @@ Three independent mechanisms; env gate always wins:
 }
 ```
 
-All fields are optional. An empty `{}` or omitted block is a no-op.
+All fields are optional. An empty `{}` or omitted block resolves to the defaults above.
+Note this example is **not** the bundled block: `readDraftCap: 5`, `budget: 50` and the
+`perTier` override are illustrative non-default values. For what actually ships, see
+[What the bundled `tiers.json` ships](#what-the-bundled-tiersjson-ships).
