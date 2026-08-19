@@ -280,6 +280,68 @@ the only text the cap parser reads is the **dispatch text** of a task — never 
 system prompt. Switching styles cannot change a cap, a banner, or a guard decision; this is
 pinned by `test/unit/guard-style-independence.test.ts`.
 
+---
+
+## Resumed dispatches and the cumulative ceiling
+
+### What counts as a resume
+
+A **resume** is a `chat.message` for a session the plugin already tracks **at the same tier**.
+That is exactly how an opencode `task_id` resume — re-prompting an existing subagent session
+instead of spawning a new one — surfaces to the plugin: the hook sees the same `sessionID`
+with the same `agent`. There is no `task_id` field to read; same-session same-tier
+re-registration *is* the signal (`src/router/sessions.ts`, `registerFromChatMessage`).
+
+These are **not** resumes:
+
+| Case | Result |
+|---|---|
+| New `sessionID` (a retry, or an escalation to another tier) | Fresh session — own counters, empty redundancy map |
+| Same `sessionID`, **different** tier | Fresh session (the tier changed, so the budget story changed) |
+| Same `sessionID` after the idle-TTL sweep evicted it | Fresh session — accepted degradation of the TTL design |
+| Message to a non-tier agent | Not tracked at all |
+
+### What a resume does
+
+| State | On resume |
+|---|---|
+| Per-dispatch cap (`calls`) | **Reset to 0**; the cap is re-parsed from the new dispatch text (including the `CAP:none` justification gate) |
+| Redundancy fingerprints (`seen`) | **Preserved** — a re-read across dispatches still emits `[⚠ REDUNDANT: … call #N]` |
+| Cumulative read count (`totalCalls`) | **Preserved and still counting** |
+| Dispatch count (`dispatches`) | Incremented; reported in trajectory telemetry as `dispatches` |
+| Guard state | `beginDispatch()` resets `toolCallCount`; `totalToolCallCount`, fingerprints and deliverable state survive |
+
+### Cumulative ceiling
+
+A resumed session gets a fresh per-dispatch budget every round, so the per-dispatch cap alone
+cannot bound it. Both layers therefore carry a cumulative ceiling derived from the
+**configured** budget — never a bare constant:
+
+| Layer | Ceiling | Constant | Effect on breach |
+|---|---|---|---|
+| Read-only caps | `cap × 3`, where `cap` is the **current** dispatch's cap (`tierCaps`/`CAP:N`) | `CUMULATIVE_CAP_MULTIPLIER` in `src/router/sessions.ts` | Appends `[⚠ CUMULATIVE BUDGET EXCEEDED: total/ceiling across N dispatches — return now]` to the banner |
+| Hard guard | `guard.budget × 3` | `CUMULATIVE_BUDGET_MULTIPLIER` in `src/guard/enforce.ts` | `cumulative_iteration_cap` — blocks in `enforced` mode, notes in `advisory` |
+
+Because the read-only ceiling follows the *current* cap, a tighter resumed cap makes the
+ceiling stricter — a resume can never buy more total budget than it declares. A `CAP:none`
+dispatch has no per-dispatch budget to derive from and therefore **no cumulative ceiling**
+(the redundancy check still applies).
+
+### If you never resume
+
+Nothing changes. On a first-and-only dispatch `totalCalls == calls <= cap`, so the cumulative
+line is unreachable and every banner is byte-identical to previous versions — pinned by the
+golden banner snapshots and by `test/integration/resume-flow.test.ts`.
+
+### `CAP:none` now requires a reason
+
+`CAP:none` is honored only when the dispatch text also contains a `reason:` line. An
+unjustified `CAP:none` falls back to the tier baseline cap. The gate is re-applied on every
+dispatch, so a justified first dispatch cannot launder an unjustified resume into an uncapped
+one. `CAP:N` is unaffected. Prompt rules asked for a reason; this makes it deterministic.
+
+---
+
 ### Validation
 
 - `promptStyle` must be one of `prescriptive`, `goal-oriented`, `auto` — a typo throws at load.
@@ -300,7 +362,7 @@ pins this: it resolves the real policies from the shipped file and from the same
 |---|---|---|
 | `mode` | `"advisory"` | `src/router/enforcement.ts` — violations are logged, never blocked |
 | `envGate` | `"MODEL_ROUTER_ENFORCE"` | `src/router/enforcement.ts` (`DEFAULT_ENV_GATE`) |
-| `guard.budget` | `25` | `src/guard/enforce.ts` (`DEFAULT_GUARD_BUDGET`) |
+| `guard.budget` | `25` | `src/guard/enforce.ts` (`DEFAULT_GUARD_BUDGET`) — per dispatch; the cumulative ceiling across resumes is `budget × 3` |
 | `guard.readDraftCap` | `3` | `src/guard/enforce.ts` |
 | `guard.sameOpRetryCap` | `1` | `src/guard/enforce.ts` |
 | `guard.blockSelfScript` | `true` | `src/guard/enforce.ts` |

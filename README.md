@@ -474,9 +474,28 @@ Subagents carry a cap on their own read-only tool calls (grep/read/glob/ls) per 
 The orchestrator can override any subagent's cap per dispatch by including a directive in the `Task` prompt:
 
 - `CAP:N` — tighten or loosen to N calls (e.g., `CAP:3` for a focused lookup).
-- `CAP:none` — disable the numeric cap entirely (used in `quality` mode and for `@heavy` in `deep` mode).
+- `CAP:none` — disable the numeric cap entirely (used in `quality` mode and for `@heavy` in `deep` mode). **`CAP:none` is honored only when the dispatch prompt also contains a `reason:` line.** An unjustified `CAP:none` silently falls back to the tier baseline — uncapped work must be justified in the dispatch, not just requested. `CAP:N` is unaffected.
 
 Omitting the directive falls back to the tier baseline. Subagents may **exceed** their cap with a 1-line `reason:` in the return (target, not hard block).
+
+#### Resumed dispatches
+
+A "resume" is a second `chat.message` to a session already tracked at the **same tier** — how an opencode `task_id` resume (re-prompting an existing subagent session instead of spawning a new one) reaches the plugin. On resume:
+
+- the **per-dispatch cap resets** (`[cap: 1/8]` again) — the resumed round gets a full budget, and re-reads the `CAP:` directive from the new dispatch text, gate included;
+- the **redundancy map persists** — re-reading a file you already read in the previous round still emits `[⚠ REDUNDANT: … call #1]`;
+- **cumulative usage persists** and is bounded by a ceiling of `cap × 3` (the current dispatch's cap). Exceeding it appends:
+
+```
+[cap: 2/3]
+[⚠ CUMULATIVE BUDGET EXCEEDED: 10/9 across 4 dispatches — return now]
+```
+
+The ceiling follows the *current* cap, so a tighter resumed cap tightens the ceiling. `CAP:none` has no per-dispatch budget to derive from and therefore no cumulative ceiling. A **retry** (new session, e.g. an escalation to another tier) is not a resume: it gets fresh counters and an empty redundancy map. A session evicted by the idle-TTL sweep also comes back fresh.
+
+The same accounting exists at the hard-guard layer: `guard.budget` resets per dispatch, with a cumulative ceiling of `guard.budget × 3` enforced as `cumulative_iteration_cap`.
+
+**If you never resume a subagent session, nothing changes** — a first dispatch's cumulative count equals its per-dispatch count, so the ceiling is unreachable and every banner is byte-identical to before.
 
 #### Runtime enforcement (subagents only)
 
