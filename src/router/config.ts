@@ -57,7 +57,7 @@ export interface EnforcementConfig {
   envGate?: string;
   perTier?: Record<string, "off" | "advisory" | "enforced">;
   guard?: { readDraftCap?: number; sameOpRetryCap?: number; blockSelfScript?: boolean; deliverableFirst?: boolean; budget?: number; blockScriptWrites?: boolean };
-  verify?: { require?: "never" | "whenDoDPresent" | "always"; requireExplicitDoD?: boolean; preferDeterministic?: boolean; graderPolicy?: "atLeastProducerTier"; graderTemperature?: number; minGraderTier?: string };
+  verify?: { require?: "never" | "whenDoDPresent" | "always"; requireExplicitDoD?: boolean; preferDeterministic?: boolean; graderPolicy?: "atLeastProducerTier"; graderTemperature?: number; minGraderTier?: string | null };
   escalate?: { floorTier?: string | null; ladder?: string[]; maxAttemptsPerTier?: number; maxTotalAttempts?: number; costCeiling?: { base?: string; multiple?: number } };
   proportional?: { trivialBypass?: boolean; trivialClassifier?: string };
 }
@@ -411,6 +411,13 @@ function validateEnforcement(obj: Record<string, unknown>): void {
         );
       }
     }
+    if (enforcement.envGate !== undefined) {
+      if (typeof enforcement.envGate !== "string" || !enforcement.envGate) {
+        throw new Error(
+          "tiers.json: enforcement.envGate must be a non-empty string",
+        );
+      }
+    }
     if (
       enforcement.verify !== undefined &&
       typeof enforcement.verify === "object" &&
@@ -423,6 +430,35 @@ function validateEnforcement(obj: Record<string, unknown>): void {
       ) {
         throw new Error(
           'tiers.json: enforcement.verify.graderPolicy must be "atLeastProducerTier"',
+        );
+      }
+      // `null` is the shipped default and means "no floor" — same as absent.
+      if (
+        verify.minGraderTier !== undefined &&
+        verify.minGraderTier !== null &&
+        typeof verify.minGraderTier !== "string"
+      ) {
+        throw new Error(
+          "tiers.json: enforcement.verify.minGraderTier must be a string or null",
+        );
+      }
+      if (verify.graderTemperature !== undefined) {
+        if (
+          typeof verify.graderTemperature !== "number" ||
+          !Number.isFinite(verify.graderTemperature) ||
+          verify.graderTemperature < 0
+        ) {
+          throw new Error(
+            "tiers.json: enforcement.verify.graderTemperature must be a number >= 0",
+          );
+        }
+      }
+      if (
+        verify.requireExplicitDoD !== undefined &&
+        typeof verify.requireExplicitDoD !== "boolean"
+      ) {
+        throw new Error(
+          "tiers.json: enforcement.verify.requireExplicitDoD must be a boolean",
         );
       }
     }
@@ -525,6 +561,41 @@ function validateEnforcement(obj: Record<string, unknown>): void {
         if (typeof guard.blockScriptWrites !== "boolean") {
           throw new Error("enforcement.guard.blockScriptWrites must be a boolean");
         }
+      }
+      for (const key of ["readDraftCap", "sameOpRetryCap"] as const) {
+        if (guard[key] !== undefined) {
+          if (
+            typeof guard[key] !== "number" ||
+            !Number.isInteger(guard[key]) ||
+            (guard[key] as number) < 0
+          ) {
+            throw new Error(
+              `tiers.json: enforcement.guard.${key} must be an integer >= 0`,
+            );
+          }
+        }
+      }
+      for (const key of ["blockSelfScript", "deliverableFirst"] as const) {
+        if (guard[key] !== undefined && typeof guard[key] !== "boolean") {
+          throw new Error(
+            `tiers.json: enforcement.guard.${key} must be a boolean`,
+          );
+        }
+      }
+    }
+    if (
+      enforcement.proportional !== undefined &&
+      typeof enforcement.proportional === "object" &&
+      enforcement.proportional !== null
+    ) {
+      const proportional = enforcement.proportional as Record<string, unknown>;
+      if (
+        proportional.trivialBypass !== undefined &&
+        typeof proportional.trivialBypass !== "boolean"
+      ) {
+        throw new Error(
+          "tiers.json: enforcement.proportional.trivialBypass must be a boolean",
+        );
       }
     }
   }

@@ -75,6 +75,121 @@ describe("tiers.json enforcement block — shape", () => {
   });
 });
 
+describe("validateEnforcement — shipped keys are type-checked", () => {
+  /** The shipped config with one enforcement path replaced by a bad value. */
+  function withBadValue(
+    section: string | null,
+    key: string,
+    value: unknown,
+  ): Record<string, unknown> {
+    const raw = JSON.parse(JSON.stringify(readTiersRaw())) as Record<
+      string,
+      unknown
+    >;
+    const enf = raw.enforcement as Record<string, unknown>;
+    if (section === null) {
+      enf[key] = value;
+    } else {
+      (enf[section] as Record<string, unknown>)[key] = value;
+    }
+    return raw;
+  }
+
+  const cases: [string | null, string, unknown, RegExp][] = [
+    [null, "envGate", "", /enforcement\.envGate must be a non-empty string/],
+    [null, "envGate", 1, /enforcement\.envGate must be a non-empty string/],
+    [
+      "guard",
+      "readDraftCap",
+      "3",
+      /enforcement\.guard\.readDraftCap must be an integer >= 0/,
+    ],
+    [
+      "guard",
+      "readDraftCap",
+      1.5,
+      /enforcement\.guard\.readDraftCap must be an integer >= 0/,
+    ],
+    [
+      "guard",
+      "readDraftCap",
+      -1,
+      /enforcement\.guard\.readDraftCap must be an integer >= 0/,
+    ],
+    [
+      "guard",
+      "sameOpRetryCap",
+      null,
+      /enforcement\.guard\.sameOpRetryCap must be an integer >= 0/,
+    ],
+    [
+      "guard",
+      "blockSelfScript",
+      "true",
+      /enforcement\.guard\.blockSelfScript must be a boolean/,
+    ],
+    [
+      "guard",
+      "deliverableFirst",
+      0,
+      /enforcement\.guard\.deliverableFirst must be a boolean/,
+    ],
+    [
+      "verify",
+      "minGraderTier",
+      7,
+      /enforcement\.verify\.minGraderTier must be a string or null/,
+    ],
+    [
+      "verify",
+      "graderTemperature",
+      "0",
+      /enforcement\.verify\.graderTemperature must be a number >= 0/,
+    ],
+    [
+      "verify",
+      "graderTemperature",
+      -1,
+      /enforcement\.verify\.graderTemperature must be a number >= 0/,
+    ],
+    [
+      "verify",
+      "requireExplicitDoD",
+      "no",
+      /enforcement\.verify\.requireExplicitDoD must be a boolean/,
+    ],
+    [
+      "proportional",
+      "trivialBypass",
+      "yes",
+      /enforcement\.proportional\.trivialBypass must be a boolean/,
+    ],
+  ];
+
+  for (const [section, key, value, message] of cases) {
+    const path = section === null ? key : `${section}.${key}`;
+    it(`rejects ${path} = ${JSON.stringify(value)} naming the field`, () => {
+      expect(() => validateConfig(withBadValue(section, key, value))).toThrow(
+        message,
+      );
+    });
+  }
+
+  it("still accepts every value the shipped block actually uses", () => {
+    // Valid-but-different values must not be rejected by the new checks.
+    expect(() => validateConfig(withBadValue("guard", "readDraftCap", 0))).not.toThrow();
+    expect(() =>
+      validateConfig(withBadValue("verify", "minGraderTier", "medium")),
+    ).not.toThrow();
+    expect(() =>
+      validateConfig(withBadValue("verify", "graderTemperature", 0.7)),
+    ).not.toThrow();
+    expect(() =>
+      validateConfig(withBadValue("proportional", "trivialBypass", false)),
+    ).not.toThrow();
+  });
+});
+
 describe("tiers.json enforcement block — behaviour invariance", () => {
   it("resolves the same guard policy with and without the block", () => {
     const { shipped, absent } = bothConfigs();
