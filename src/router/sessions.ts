@@ -11,10 +11,23 @@ export type Cap = number | "none";
 export interface SubagentState {
   tierName: string;
   cap: Cap;
+  /** Read-only tool calls in the CURRENT dispatch round (reset on resume). */
   calls: number;
+  /** Number of dispatch rounds registered for this session (1 on first dispatch). */
+  dispatches: number;
+  /** Cumulative read-only tool calls across all dispatch rounds (never reset). */
+  totalCalls: number;
   /** Fingerprint → call index where this fingerprint was first seen. */
   seen: Map<string, number>;
   trivial: boolean;
+}
+
+/** Outcome of a chat.message registration attempt. */
+export interface RegisterResult {
+  /** True when the message was directed at a tracked tier agent. */
+  registered: boolean;
+  /** True when this was a same-session, same-tier re-registration (a resume). */
+  resumed: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -27,6 +40,16 @@ export const DEFAULT_TIER_CAPS: Record<string, number> = {
   medium: 5,
   heavy: 3,
 };
+
+/**
+ * Cumulative read-only ceiling across resumed dispatches, expressed as a
+ * multiple of the CURRENT dispatch cap. A subagent that keeps getting resumed
+ * gets a fresh per-dispatch budget every round; without a ceiling derived from
+ * the configured budget, repeated resumes are an unbounded read loop.
+ * A `CAP:none` dispatch has no per-dispatch budget to derive from, so it has
+ * no cumulative ceiling either.
+ */
+export const CUMULATIVE_CAP_MULTIPLIER = 3;
 
 // ---------------------------------------------------------------------------
 // Cap directive parser
@@ -98,6 +121,16 @@ export function buildCapBanner(
     } else if (remaining <= 2) {
       lines.push(
         `[⚠ CAP WARNING: ${remaining} read-only call(s) remaining before forced return]`,
+      );
+    }
+
+    // Cumulative ceiling across resumed dispatches. Intentionally follows the
+    // CURRENT dispatch cap: a tighter resumed cap makes the ceiling stricter,
+    // so a resume can never buy more total budget than it declares.
+    const cumulativeCeiling = state.cap * CUMULATIVE_CAP_MULTIPLIER;
+    if (state.totalCalls > cumulativeCeiling) {
+      lines.push(
+        `[⚠ CUMULATIVE BUDGET EXCEEDED: ${state.totalCalls}/${cumulativeCeiling} across ${state.dispatches} dispatches — return now]`,
       );
     }
   }
@@ -213,6 +246,8 @@ export function createSessionStore(options: SessionStoreOptions = {}) {
         tierName: tier,
         cap: baseline,
         calls: 0,
+        dispatches: 1,
+        totalCalls: 0,
         seen: new Map(),
         trivial: false,
       });
@@ -252,33 +287,59 @@ export function createSessionStore(options: SessionStoreOptions = {}) {
      * at a registered tier agent, records the session and initialises its cap state.
      * Accepts `tierNames` (from getActiveTiers) so this module doesn't need to
      * import protocol.ts.
+     *
+     * Resume detection: a re-registration of a session already tracked at the
+     * SAME tier is a resumed dispatch (this is how an opencode task_id resume
+     * manifests at the chat.message hook). A resume resets the per-dispatch
+     * budget but preserves cumulative usage and read fingerprints.
      */
     registerFromChatMessage(
       input: { agent?: string; sessionID: string },
       output: unknown,
       cfg: RouterConfig,
       tierNames: string[],
-    ): void {
-      if (input.agent && tierNames.includes(input.agent)) {
-        subagentSessionIDs.add(input.sessionID);
-
-        // Initialize cap state on first dispatch; reset on subsequent rounds to the same
-        // subagent session (rare but supported — treats each round as a fresh budget).
-        const tierName = input.agent;
-        const dispatchText = extractDispatchText(output);
-        const override = parseCapDirective(dispatchText);
-        const baseline =
-          cfg.tierCaps?.[tierName] ?? DEFAULT_TIER_CAPS[tierName] ?? 5;
-        const cap: Cap = override ?? baseline;
-        subagentCapState.set(input.sessionID, {
-          tierName,
-          cap,
-          calls: 0,
-          seen: new Map(),
-          trivial: classifyTrivial(dispatchText, tierName, cfg),
-        });
-        touch(input.sessionID);
+    ): RegisterResult {
+      if (!input.agent || !tierNames.includes(input.agent)) {
+        return { registered: false, resumed: false };
       }
+
+      subagentSessionIDs.add(input.sessionID);
+
+      const tierName = input.agent;
+      const dispatchText = extractDispatchText(output);
+      const override = parseCapDirective(dispatchText);
+      const baseline =
+        cfg.tierCaps?.[tierName] ?? DEFAULT_TIER_CAPS[tierName] ?? 5;
+      const cap: Cap = override ?? baseline;
+      const trivial = classifyTrivial(dispatchText, tierName, cfg);
+      const existing = subagentCapState.get(input.sessionID);
+
+      // Same-tier re-registration = resumed dispatch. Reset only the
+      // per-dispatch budget; `seen` is PRESERVED so redundancy detection
+      // carries across dispatches, and totalCalls keeps feeding the
+      // cumulative ceiling.
+      if (existing?.tierName === tierName) {
+        existing.cap = cap;
+        existing.calls = 0;
+        existing.dispatches += 1;
+        existing.trivial = trivial;
+        touch(input.sessionID);
+        return { registered: true, resumed: true };
+      }
+
+      // No prior state (first dispatch, or an idle-TTL sweep evicted it) or a
+      // different tier on the same sessionID: fresh session, fresh counters.
+      subagentCapState.set(input.sessionID, {
+        tierName,
+        cap,
+        calls: 0,
+        dispatches: 1,
+        totalCalls: 0,
+        seen: new Map(),
+        trivial,
+      });
+      touch(input.sessionID);
+      return { registered: true, resumed: false };
     },
 
     /**
@@ -304,6 +365,7 @@ export function createSessionStore(options: SessionStoreOptions = {}) {
       const isRedundant = previousCall !== undefined;
 
       state.calls += 1;
+      state.totalCalls += 1;
       if (!isRedundant) {
         state.seen.set(fp, state.calls);
       }

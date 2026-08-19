@@ -38,7 +38,14 @@ describe("parseCapDirective", () => {
 });
 
 function st(partial: Partial<SubagentState> & { cap: Cap; calls: number }): SubagentState {
-  return { tierName: "fast", seen: new Map(), trivial: false, ...partial };
+  return {
+    tierName: "fast",
+    dispatches: 1,
+    totalCalls: partial.calls,
+    seen: new Map(),
+    trivial: false,
+    ...partial,
+  };
 }
 
 describe("buildCapBanner", () => {
