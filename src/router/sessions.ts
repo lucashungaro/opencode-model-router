@@ -307,7 +307,14 @@ export function createSessionStore(options: SessionStoreOptions = {}) {
 
       const tierName = input.agent;
       const dispatchText = extractDispatchText(output);
-      const override = parseCapDirective(dispatchText);
+      // CAP:none is honored only when the dispatch carries a justification
+      // (a `reason:` line). An unjustified CAP:none falls back to the tier
+      // baseline — prompt rules alone are advisory; this is the deterministic
+      // enforcer of "uncapped requires a stated reason". Numeric CAP:N is
+      // unaffected.
+      const parsed = parseCapDirective(dispatchText);
+      const override =
+        parsed === "none" && !/\breason:/i.test(dispatchText) ? null : parsed;
       const baseline =
         cfg.tierCaps?.[tierName] ?? DEFAULT_TIER_CAPS[tierName] ?? 5;
       const cap: Cap = override ?? baseline;

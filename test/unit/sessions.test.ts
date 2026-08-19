@@ -37,6 +37,93 @@ describe("parseCapDirective", () => {
   });
 });
 
+describe("CAP:none justification gate", () => {
+  it("falls back to the tier baseline for an unjustified CAP:none", () => {
+    const store = createSessionStore();
+    store.registerFromChatMessage(
+      { agent: "fast", sessionID: "ses_cap_none_bare" },
+      dispatch("CAP:none do a broad survey"),
+      cfg,
+      tierNames,
+    );
+
+    const out: Record<string, unknown> = {};
+    store.recordToolCall(
+      { sessionID: "ses_cap_none_bare", tool: "read", args: { file_path: "a.ts" } },
+      out,
+    );
+
+    expect(out.output).toContain("[cap: 1/8]");
+    expect(out.output).not.toContain("∞");
+  });
+
+  it("honors CAP:none when the dispatch includes a reason line", () => {
+    const store = createSessionStore();
+    store.registerFromChatMessage(
+      { agent: "fast", sessionID: "ses_cap_none_reason" },
+      dispatch("CAP:none reason: full-repo audit"),
+      cfg,
+      tierNames,
+    );
+
+    const out: Record<string, unknown> = {};
+    store.recordToolCall(
+      { sessionID: "ses_cap_none_reason", tool: "read", args: { file_path: "a.ts" } },
+      out,
+    );
+
+    expect(out.output).toContain("[cap: 1/∞]");
+  });
+
+  it("leaves numeric CAP:N untouched by the gate", () => {
+    const store = createSessionStore();
+    store.registerFromChatMessage(
+      { agent: "fast", sessionID: "ses_cap_numeric_nogate" },
+      dispatch("CAP:2 no justification here"),
+      cfg,
+      tierNames,
+    );
+
+    const out: Record<string, unknown> = {};
+    store.recordToolCall(
+      { sessionID: "ses_cap_numeric_nogate", tool: "read", args: { file_path: "a.ts" } },
+      out,
+    );
+
+    expect(out.output).toContain("[cap: 1/2]");
+  });
+
+  it("re-applies the gate on same-tier resume", () => {
+    const store = createSessionStore();
+    const sessionID = "ses_cap_none_resume_gate";
+
+    store.registerFromChatMessage(
+      { agent: "fast", sessionID },
+      dispatch("CAP:none reason: full-repo audit"),
+      cfg,
+      tierNames,
+    );
+
+    const first: Record<string, unknown> = {};
+    store.recordToolCall({ sessionID, tool: "read", args: { file_path: "a.ts" } }, first);
+    expect(first.output).toContain("[cap: 1/∞]");
+
+    const resumed = store.registerFromChatMessage(
+      { agent: "fast", sessionID },
+      dispatch("CAP:none keep going"),
+      cfg,
+      tierNames,
+    );
+    expect(resumed).toEqual({ registered: true, resumed: true });
+
+    const second: Record<string, unknown> = {};
+    store.recordToolCall({ sessionID, tool: "read", args: { file_path: "b.ts" } }, second);
+
+    expect(second.output).toContain("[cap: 1/8]");
+    expect(second.output).not.toContain("∞");
+  });
+});
+
 function st(partial: Partial<SubagentState> & { cap: Cap; calls: number }): SubagentState {
   return {
     tierName: "fast",
