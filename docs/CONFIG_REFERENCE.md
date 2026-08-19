@@ -8,7 +8,30 @@ The `enforcement` block in `tiers.json`. Every field is optional; each one falls
 
 ---
 
-## Top-level fields
+## `tiers.json` top-level keys
+
+Everything below this table describes the `enforcement` block. These are the other top-level
+keys of `tiers.json`, in the order the bundled file writes them. The router type is
+`RouterConfig` in `src/router/config.ts`; `validateConfig` in the same file rejects a file that
+gets any of them wrong.
+
+| Key | Type | Bundled value | Notes |
+|---|---|---|---|
+| `activePreset` | `string` | `"anthropic"` | Names the entry of `presets` the router routes with. `validateConfig` rejects a name that is not a defined preset; matching is case-insensitive and trimmed. `/router preset <name>` rewrites it at runtime and persists the choice to the router's state file. Read by `getActiveTiers` in `src/router/protocol.ts`, which falls back to the first defined preset, and by the fallback-chain builder. |
+| `activeMode` | `string` (optional) | `"normal"` | Names the entry of `modes` layered over the preset. Omit it — or point it at nothing — and no mode is applied. `/router mode <name>` rewrites it at runtime, rejecting a name that `modes` does not define, and persists it. Read by `getActiveMode` in `src/router/protocol.ts`. |
+| `presets` | `Record<string, Preset>` | six presets: `anthropic`, `openai`, `github-copilot`, `google`, `hybrid`, `fable-effort` | Each preset maps a tier name (`fast`/`medium`/`heavy`) to its `TierConfig` — `model`, `costRatio`, `steps`, `effort`, and the optional per-tier `prompt`. |
+| `rules` | `string[]` | 10 rules | The numbered routing rules rendered verbatim into the `Rules:` line of the delegation protocol. Order is significant: they are emitted `1.`…`N.` in array order. |
+| `defaultTier` | `string` | `"medium"` | The tier used when nothing else selects one — no `[tier:X]` tag, no task-pattern match, no mode `defaultTier`. A mode's own `defaultTier` wins over this one; `src/index.ts` falls back to `"medium"` if the key is somehow absent. `validateConfig` requires it to be a string. |
+| `taskPatterns` | `Record<string, string[]>` (optional) | `fast`/`medium`/`heavy` keyword lists | Per-tier keyword lists that teach the orchestrator which work belongs to which tier. `buildTaskTaxonomy` in `src/router/protocol.ts` renders them into the protocol's `R:` line, joining each tier's keywords with `/`; an empty or absent object drops that line entirely. |
+| `modes` | `Record<string, ModeConfig>` (optional) | `normal`, `budget`, `quality`, `deep` | Named routing profiles. Each is `{ defaultTier, description, overrideRules? }`: `defaultTier` replaces the top-level one while the mode is active, `description` is what `/router mode` prints, and a non-empty `overrideRules` replaces the `rules` list for that mode and also suppresses the multi-phase decomposition hint, which would otherwise conflict with it. `validateConfig` checks the shape of every entry. |
+| `tierPrompts` | `Record<string, string>` (optional) | one prompt per tier | Global rule-based tier prompts. A preset-level `tier.prompt` overrides the entry for that tier. See [Prompt styles](#prompt-styles-promptstyle) for the goal-oriented counterpart. |
+| `tierCaps` | `Record<string, number>` (optional) | `fast: 8`, `medium: 5`, `heavy: 3` | Read-only tool-call baselines per tier, enforced at runtime through cap banners. |
+| `fallback` | `FallbackConfig` (optional) | `global` chains for the four provider presets | Provider fallback chains, either `global` (keyed by provider) or `presets` (keyed by preset, then provider). Rendered into the protocol's `Chain:` line. |
+| `enforcement` | object (optional) | shipped explicitly at the previous defaults | The verification/acceptance layer. Documented in the rest of this file. |
+
+---
+
+## `enforcement` top-level fields
 
 | Field | Type | Default | Notes |
 |---|---|---|---|

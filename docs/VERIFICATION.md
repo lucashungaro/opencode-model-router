@@ -123,6 +123,34 @@ Observes the built-in `task` tool's after-hook (`<task_result>` text + child ses
 
 The plugin-owned `delegate` tool produces via the OpenCode client, runs the gate, and on FAIL hands off to the Layer-3 escalation ladder. Returns only an accepted result or an honest `status: unmet`. Never returns a fake pass.
 
+## Time-boxes
+
+`session.prompt` has no client-side bound, so a model or transport that never answers would leave a delegation waiting forever — no status, no disposal, nothing for the ladder to act on. Three ceilings in `src/verify/timeout.ts` turn "never returns" into an honest failed attempt:
+
+| key | default | bounds |
+|---|---|---|
+| `delegateTimeoutMs` | `600000` (10 min) | one producer `session.prompt` turn |
+| `graderTimeoutMs` | `60000` (1 min) | one grader `session.prompt` turn |
+| `gateBudgetMs` | `90000` (90 s) | the whole acceptance gate, grader ladder included |
+
+**Fail-closed, in both directions.** A gate that runs out of budget is `unmet` with the reason `verification gate timed out after <n>ms` — never accepted, because the one thing worse than a slow verifier is a fast fabricated pass. And an unusable configured value (zero, negative, non-finite, non-numeric) falls back to the *default* ceiling, never to "no ceiling"; `validateEnforcement` already rejects those in `tiers.json`, so `timeoutMs()` is defence in depth for config that reaches the runtime through an override layer or a hand-built `RouterConfig`.
+
+**A real cancellation, not an abandoned wait.** Every call site pairs the rejection with `session.abort` — directly, or via `disposeChildSession`, which aborts before it deletes. The abort is a genuine server-side call, so the underlying turn actually stops.
+
+**The gate's abort is scoped to its own delegation.** Each `accept()` call tracks the grader sessions *it* opened and aborts only those. The wiring-global grader set is shared by every concurrent delegation, so aborting that here would kill a healthy grader belonging to someone else's work — reachable with the shipped config, where a deterministic check may run a command for up to 120 s against a 90 s gate budget.
+
+**Producer failure is not a timeout special case.** A producer that throws (including on its own ceiling) short-circuits to `pass: false` with `producer failed: <message>`; the gate is not even opened. A non-timeout gate error reports `verification failed (fail-closed)`. `RouterTimeoutError` is a distinct class precisely so these three stay distinguishable instead of collapsing into one message.
+
+## `cwd`-scoped verification
+
+A delegation may declare a `cwd`. When it does, verification is scoped to that directory instead of the router's own:
+
+- **Deterministic checks.** `resolveBaseDir` (`src/verify/paths.ts`) resolves the effective base: no `cwd` → the router's directory (byte-identical to the previous behavior), an absolute `cwd` → that path, a relative one → joined onto the router directory. Every `fileExists`, `fileContains`, and command check then resolves through `resolveAgainst` and runs with `cwd` set to that base.
+- **The grader session.** `req.cwd` is passed as `query: { directory: req.cwd }` when the grader session is created. Naming the directory in the prompt text is not enough: without the query parameter the grader's own tools resolve against the router's cwd, so it would report "file not found" for files that are plainly there.
+- **The producer is deliberately NOT scoped.** Only the verification side takes the `cwd`. The producer runs where OpenCode put it.
+
+An absolute check path bypasses the base directory entirely, and the failure reason says so — it names the path that was actually checked rather than claiming the file was missing "in `<cwd>`", a directory the check never looked in.
+
 ## `verify` config keys
 
 | key | default | notes |
@@ -133,6 +161,9 @@ The plugin-owned `delegate` tool produces via the OpenCode client, runs the gate
 | `minGraderTier` | — | Floor on grader tier regardless of producer |
 | `graderTemperature` | `0` | — |
 | `requireExplicitDoD` | `false` | Mode A: `true` = demand explicit block, no inference |
+| `delegateTimeoutMs` | `600000` | Producer turn ceiling — see [Time-boxes](#time-boxes) |
+| `graderTimeoutMs` | `60000` | Grader turn ceiling |
+| `gateBudgetMs` | `90000` | Whole-gate ceiling |
 
 Full schema: see `docs/CONFIG_REFERENCE.md`.
 
