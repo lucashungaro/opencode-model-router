@@ -314,6 +314,94 @@ describe("classifyTrivial", () => {
   it("fast tier + no matching keyword => false", () => {
     expect(classifyTrivial("do the thing xyz", "fast", fullCfg)).toBe(false);
   });
+
+  // --- narrowing: trivial means SINGLE-SHOT lookup, not merely "read-only" ---
+  // Before this narrowing every case below returned true, which exempted
+  // multi-file @fast recon from enforced-mode hard blocks.
+
+  it("single named file => true (the canonical single-shot lookup)", () => {
+    expect(
+      classifyTrivial("read package.json and tell me the version", "fast", fullCfg),
+    ).toBe(true);
+  });
+
+  it("multi-file recon (6 paths) => false (path-count gate)", () => {
+    expect(
+      classifyTrivial(
+        "read README.md, package.json, tsconfig.json, tiers.json, LICENSE.md and src/index.ts",
+        "fast",
+        fullCfg,
+      ),
+    ).toBe(false);
+  });
+
+  it("two named files => false (exceeds MAX_TRIVIAL_PATHS)", () => {
+    expect(
+      classifyTrivial("read package.json and tsconfig.json", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("same file named twice => true (paths are de-duplicated)", () => {
+    expect(
+      classifyTrivial("read package.json and recheck package.json", "fast", fullCfg),
+    ).toBe(true);
+  });
+
+  it("'then' sequencing marker => false (multi-step gate)", () => {
+    expect(
+      classifyTrivial("read the config then summarise it", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("'one at a time' marker => false (multi-step gate)", () => {
+    expect(
+      classifyTrivial("read these files one at a time using the read tool", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("'each' distributive marker => false (multi-step gate)", () => {
+    expect(
+      classifyTrivial("search each module for the handler", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("numbered list => false (multi-step gate)", () => {
+    expect(
+      classifyTrivial("read the following:\n1. the config\n2. the manifest", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("bulleted list => false (multi-step gate)", () => {
+    expect(
+      classifyTrivial("read the following:\n- the config\n- the manifest", "fast", fullCfg),
+    ).toBe(false);
+  });
+
+  it("long prose brief with no markers => false (length backstop)", () => {
+    const long = "read the source and report back. " + "context filler. ".repeat(20);
+    expect(long.length).toBeGreaterThan(240);
+    expect(classifyTrivial(long, "fast", fullCfg)).toBe(false);
+  });
+
+  it("the plugin's cwd/platform footer alone does not defeat trivial", () => {
+    // ac206ab appends this footer to every dispatch prompt. A POSIX cwd must not
+    // be counted as a target file, and the footer must not blow the length gate.
+    const withFooter =
+      "read package.json and tell me the version" +
+      "\n\nWorking directory: /home/u/proj\nPlatform: linux\nShell: bash";
+    expect(classifyTrivial(withFooter, "fast", fullCfg)).toBe(true);
+  });
+
+  it("the guard-hardblock smoke prompt is NOT trivial (regression pin)", () => {
+    // Verbatim from test/smoke/guard-hardblock.smoke.test.ts. This returning
+    // true is the bug that made the read_budget guard unfireable on @fast.
+    const smokePrompt =
+      "Read these files ONE AT A TIME using the read tool, in this exact order, " +
+      "and after each give a one-line summary: README.md, then package.json, then " +
+      "tsconfig.json, then tiers.json, then LICENSE, then src/index.ts. Use the " +
+      "read tool separately for each file; do not skip any.";
+    expect(classifyTrivial(smokePrompt, "fast", fullCfg)).toBe(false);
+  });
 });
 
 describe("createSessionStore — isTrivial", () => {

@@ -165,11 +165,55 @@ function normTaskKw(kw: string): string {
 }
 
 /**
+ * A dispatch is "multi-step" when its text describes a sequence rather than one
+ * lookup: an ordered/bulleted list item, or an explicit sequencing/distributive
+ * word. These are the cheapest reliable signals that the subagent is expected to
+ * make several tool calls, which is exactly the case proportional bypass must
+ * NOT exempt from enforcement.
+ */
+const MULTI_STEP_RE =
+  /(?:^\s*(?:[-*+]|\d+[.)])\s)|\bthen\b|\bone at a time\b|\bone-at-a-time\b|\bsequentially\b|\bin order\b|\bin this exact order\b|\beach\b|\bafter that\b|\bfor every\b/im;
+
+/**
+ * File-path-like tokens, counted to detect multi-file recon. Deliberately
+ * requires a known file EXTENSION rather than accepting any slashed path: the
+ * plugin appends a `Working directory: <cwd>` footer to dispatch prompts, and a
+ * POSIX cwd (`/home/u/proj`) must not be miscounted as a target file.
+ */
+const PATH_TOKEN_RE =
+  /[\w./\\-]*[\w-]\.(?:ts|tsx|js|jsx|mjs|cjs|json|jsonc|md|ya?ml|toml|txt|css|scss|html|py|rs|go|rb|java|sh|ps1|sql|lock)\b/gi;
+
+/** At most this many distinct target files still counts as a single-shot lookup. */
+const MAX_TRIVIAL_PATHS = 1;
+
+/**
+ * Backstop for multi-step dispatches that use none of the marker words above:
+ * a genuine single-shot lookup is short. Sized well above the real single-shot
+ * prompts ("read package.json and tell me the version") and well below a real
+ * recon brief, and measured AFTER the cwd/platform footer so that footer can
+ * never by itself push a dispatch over the line.
+ */
+const MAX_TRIVIAL_CHARS = 240;
+
+/**
  * Classify a dispatch as "trivial" AT DISPATCH TIME (m2): conservative,
- * tier-gated. Only a `fast`-tier dispatch whose text matches a fast taskPattern
- * and contains NO medium/heavy signal is trivial. Real work (medium/heavy tier,
- * or implementation keywords) is NEVER trivial — so proportional bypass can
- * never silently disable enforcement on real work.
+ * tier-gated. Trivial means the GA-6 proportionality case — a SINGLE-SHOT
+ * lookup — not merely "read-only". A dispatch is trivial only when ALL hold:
+ *
+ *   1. tier is `fast` (medium/heavy is never trivial), and
+ *   2. the text is non-empty, and
+ *   3. it carries NO medium/heavy taskPattern signal, and
+ *   4. it matches a fast taskPattern stem, and
+ *   5. it names at most `MAX_TRIVIAL_PATHS` distinct file paths, and
+ *   6. it carries no multi-step marker (`MULTI_STEP_RE`), and
+ *   7. it is at most `MAX_TRIVIAL_CHARS` long.
+ *
+ * Clauses 5-7 are the narrowing. Without them ANY `fast` dispatch containing a
+ * stem like "read" or "search" was trivial, which silently exempted multi-file
+ * recon from enforced-mode hard blocks — the read_budget guard could therefore
+ * never fire on a `@fast` subagent, defeating the guard it exists to apply.
+ * Real work is still NEVER trivial, so bypass still cannot disable enforcement
+ * on implementation.
  */
 export function classifyTrivial(
   dispatchText: string,
@@ -177,7 +221,8 @@ export function classifyTrivial(
   cfg: RouterConfig,
 ): boolean {
   if (tier !== "fast") return false;
-  const text = (dispatchText || "").toLowerCase();
+  const raw = dispatchText || "";
+  const text = raw.toLowerCase();
   if (!text.trim()) return false;
   const disqualifiers = [
     ...(cfg.taskPatterns?.medium ?? []),
@@ -187,6 +232,15 @@ export function classifyTrivial(
     const n = normTaskKw(kw);
     if (n.length >= 3 && text.includes(n)) return false;
   }
+
+  // Shape gates: a single-shot lookup is short, names at most one file, and
+  // does not enumerate steps. Checked before the fast-stem match so that a
+  // multi-file recon prompt can never be rescued by containing "read".
+  if (raw.length > MAX_TRIVIAL_CHARS) return false;
+  if (MULTI_STEP_RE.test(raw)) return false;
+  const paths = new Set((text.match(PATH_TOKEN_RE) ?? []).map((p) => p.trim()));
+  if (paths.size > MAX_TRIVIAL_PATHS) return false;
+
   const fast = cfg.taskPatterns?.fast ?? [];
   for (const kw of fast) {
     const n = normTaskKw(kw);
