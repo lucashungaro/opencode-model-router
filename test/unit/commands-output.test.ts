@@ -14,8 +14,11 @@ import {
   buildEnforceStatus,
   buildOverridesOutput,
   buildRouterHelp,
+  buildModelsOutput,
+  formatModelIssues,
 } from "../../src/commands/output";
 import type { RouterConfig, ModeConfig } from "../../src/router/config";
+import type { Catalog, ModelIssue } from "../../src/router/catalog";
 
 // A minimal config is enough: these renderers only read what they print.
 function cfg(over: Partial<RouterConfig> = {}): RouterConfig {
@@ -249,5 +252,99 @@ describe("buildOverridesOutput", () => {
     expect(
       buildOverridesOutput({ ...view, localFound: true, localPresent: true }),
     ).not.toContain("create at");
+  });
+});
+
+describe("buildModelsOutput", () => {
+  const catalog: Catalog = {
+    providers: [
+      {
+        id: "anthropic",
+        name: "Anthropic",
+        defaultModel: "m-a",
+        models: [
+          { id: "m-b", status: "active" },
+          { id: "m-a", status: "active" },
+          { id: "m-old", status: "deprecated" },
+        ],
+      },
+      { id: "openai", name: "openai", models: [] },
+    ],
+  } as Catalog;
+
+  // A failed fetch is a null here, not an exception path.
+  it("says so when the catalog could not be fetched", () => {
+    expect(buildModelsOutput(null, "")).toContain("Model catalog unavailable");
+  });
+
+  it("says so when no providers are configured", () => {
+    expect(buildModelsOutput({ providers: [] } as Catalog, "")).toContain(
+      "No providers are configured",
+    );
+  });
+
+  it("lists every provider with fully-qualified ids, sorted", () => {
+    const out = buildModelsOutput(catalog, "");
+    expect(out.indexOf("`anthropic/m-a`")).toBeLessThan(out.indexOf("`anthropic/m-b`"));
+    expect(out).toContain("## anthropic (Anthropic) — default: `anthropic/m-a`");
+  });
+
+  it("flags any non-active status", () => {
+    expect(buildModelsOutput(catalog, "")).toContain("`anthropic/m-old` _(deprecated)_");
+  });
+
+  it("marks a provider that reports no models", () => {
+    expect(buildModelsOutput(catalog, "")).toContain("_(no models)_");
+  });
+
+  it("omits the parenthetical when name matches id", () => {
+    expect(buildModelsOutput(catalog, "")).toContain("## openai\n");
+  });
+
+  it("filters to one provider, case-insensitively", () => {
+    const out = buildModelsOutput(catalog, "  ANTHROPIC ");
+    expect(out).toContain("anthropic/m-a");
+    expect(out).not.toContain("## openai");
+  });
+
+  it("names what is available when the filter matches nothing", () => {
+    const out = buildModelsOutput(catalog, "bedrock");
+    expect(out).toContain("No configured provider matches");
+    expect(out).toContain("anthropic, openai");
+  });
+});
+
+describe("formatModelIssues", () => {
+  const issue = (over: Partial<ModelIssue>): ModelIssue =>
+    ({
+      tier: "fast",
+      ref: "p/gone",
+      providerId: "p",
+      kind: "model-missing",
+      suggestions: [],
+      ...over,
+    }) as ModelIssue;
+
+  it("distinguishes the three failure kinds", () => {
+    expect(formatModelIssues([issue({ kind: "provider-unknown" })])).toContain(
+      "is not configured/authenticated",
+    );
+    expect(formatModelIssues([issue({ kind: "model-deprecated" })])).toContain(
+      "**deprecated**",
+    );
+    expect(formatModelIssues([issue({})])).toContain("was not found");
+  });
+
+  it("appends suggestions only when there are any", () => {
+    expect(
+      formatModelIssues([issue({ suggestions: ["p/near", "p/near2"] })]),
+    ).toContain("Try: `p/near`, `p/near2`.");
+    expect(formatModelIssues([issue({})])).not.toContain("Try:");
+  });
+
+  it("names the tier and points at the overrides file", () => {
+    const out = formatModelIssues([issue({ tier: "heavy" })]);
+    expect(out).toContain("- @heavy:");
+    expect(out).toContain("/router overrides");
   });
 });

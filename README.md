@@ -298,6 +298,15 @@ Restart opencode after adding a new preset so its tier subagents get registered.
 
 > **`activePreset` / `activeMode` / `enforcement.mode` in an override file are _defaults_.** Runtime selections — `/preset`, `/budget`, `/router enforce` — are persisted to the state file (`~/.config/opencode/opencode-model-router.state.json`), which is applied **after** the override files and therefore wins. So the override's `activePreset` takes effect until you switch at runtime; if it ever "isn't taking", it's because a past `/preset` left a value in the state file — run `/preset <name>` again or delete that file. (The state file is machine-written, so the plugin never rewrites your hand-authored, commented override file.)
 
+### Keeping models current
+
+You do not have to wait on a plugin release when providers ship new models. opencode already resolves a live model catalog (models.dev plus your configured and authenticated providers), and the plugin reads it directly. No external fetch, no hardcoded list.
+
+- **`/router models [provider]`** lists the valid model ids for your configured providers, each annotated with the provider's default and any `deprecated`, `alpha` or `beta` status. Copy an id straight into an overrides file.
+- **Validation.** Bare `/router` checks the active preset's tier models against the catalog and reports any that are missing or deprecated, with the closest valid suggestions. A stale id surfaces immediately instead of failing silently on every subagent dispatch. The same check is logged once per session to the plugin console.
+
+This is report-only. The plugin never changes your models for you: it tells you what is available and what to change, and you set it in the overrides file.
+
 ### Advanced: edit the bundled `tiers.json` directly
 
 For an npm install, `tiers.json` is **inside the cached package directory**, not your `~/.config/opencode/` folder — typically:
@@ -788,6 +797,7 @@ Advisory is the default. To change the level:
 | `/budget <mode>` | Switch routing mode (`normal`, `budget`, `quality`, `deep`) |
 | `/annotate-plan [path]` | Annotate a plan file with `[tier:X]` tags for each step |
 | `/router overrides` | Show the global + project override file paths and merge precedence |
+| `/router models [provider]` | List valid model ids from your configured providers (with defaults and deprecated flags) |
 | `/router enforce <off\|advisory\|enforced>` | Set delegation-enforcement mode (persisted) |
 | `/bypass [on\|off]` | Toggle the router off/on for the session |
 

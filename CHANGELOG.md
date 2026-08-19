@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subagent that declares no `model` otherwise inherits the model of whoever invoked it,
   which quietly runs cheap read-only helpers at orchestrator prices. Absent or empty
   means no agent is touched.
+- **`/router models [provider]`** lists valid model ids from opencode's live provider
+  catalog, with each provider's default and any `deprecated`/`alpha`/`beta` status.
+- **Stale-model validation.** Bare `/router` checks the active preset's tier models
+  against the catalog and reports missing or deprecated ids with the closest valid
+  suggestions; the same check is logged once per session. Report-only, so the plugin
+  never changes a model for you. A bad model id previously failed silently on every
+  subagent dispatch.
 
 ### Fixed
 
