@@ -60,6 +60,13 @@ import { scrubText } from "./guard/scrub";
 import { accept } from "./verify/gate";
 import { createVerificationWiring, extractAssistantText } from "./verify/wiring";
 import {
+  DEFAULT_DELEGATE_PROMPT_TIMEOUT_MS,
+  DEFAULT_GATE_BUDGET_MS,
+  RouterTimeoutError,
+  timeoutMs,
+  withTimeout,
+} from "./verify/timeout";
+import {
   createChangedFileStore,
   parseTaskResult,
   buildDelegationDoD,
@@ -346,21 +353,36 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
               // Provider-failover vs quality-escalation precedence (Phase 3.3):
               // Provider-failover is advisory only — a text chain injected into the orchestrator
               // system prompt (buildFallbackInstructions). It is orthogonal to this runtime ladder.
-              // A transport/API error here is caught, yields an empty artefact, and is treated as
+              // A transport/API error here becomes an explicit failed attempt and is treated as
               // exactly ONE failed attempt by the quality-escalation ladder (no provider swap, no
               // double-counted attempt). API error => (advisory) provider failover; verification
               // FAIL => (runtime) quality escalation.
+              //
+              // The prompt is time-boxed: a model that never answers would
+              // otherwise hang the delegate forever. A timeout is folded into
+              // the same failed-attempt path as any other producer error — it
+              // is never an empty artefact that a lenient DoD could pass.
+              let producerError: string | null = null;
               try {
-                const res: any = await ctx.client.session.prompt({
-                  path: { id: producerSid },
-                  body: {
-                    ...(model ? { model } : {}),
-                    ...(tier ? { agent: tier } : {}),
-                    parts: [{ type: "text", text: taskText }],
-                  },
-                });
+                const res: any = await withTimeout(
+                  ctx.client.session.prompt({
+                    path: { id: producerSid },
+                    body: {
+                      ...(model ? { model } : {}),
+                      ...(tier ? { agent: tier } : {}),
+                      parts: [{ type: "text", text: taskText }],
+                    },
+                  }),
+                  timeoutMs(
+                    activeCfg.enforcement?.verify?.delegateTimeoutMs,
+                    DEFAULT_DELEGATE_PROMPT_TIMEOUT_MS,
+                  ),
+                  "delegate producer prompt",
+                );
                 producerText = extractAssistantText(res);
-              } catch {
+              } catch (error) {
+                producerError =
+                  error instanceof Error ? error.message : String(error);
                 producerText = "";
               }
 
@@ -372,20 +394,55 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                 producerTier: tier,
               };
 
+              const gateBudgetMs = timeoutMs(
+                activeCfg.enforcement?.verify?.gateBudgetMs,
+                DEFAULT_GATE_BUDGET_MS,
+              );
               let gateRes;
               try {
-                gateRes = await accept(
-                  { dod, trivial: false, mode: "modeA" },
-                  artefact,
-                  buildGateDeps(toolCtx?.sessionID),
-                );
-              } catch {
+                gateRes = producerError
+                  ? {
+                      accepted: false,
+                      verdict: {
+                        pass: false,
+                        method: "none" as const,
+                        reasons: [`producer failed: ${producerError}`],
+                      },
+                      dodSource: dod.source,
+                    }
+                  : await withTimeout(
+                      accept(
+                        { dod, trivial: false, mode: "modeA" },
+                        artefact,
+                        buildGateDeps(toolCtx?.sessionID),
+                      ),
+                      gateBudgetMs,
+                      "verification gate",
+                    );
+              } catch (error) {
+                // A gate that ran out of budget is UNMET, never accepted: the
+                // one thing worse than a slow verifier is a fast fabricated
+                // pass. Abort any grader still in flight so the ceiling is a
+                // real cancellation and not just a stopped wait.
+                if (error instanceof RouterTimeoutError) {
+                  for (const gsid of graderSessions) {
+                    try {
+                      await ctx.client.session.abort({ path: { id: gsid } });
+                    } catch {
+                      // best-effort: the gate result stands either way
+                    }
+                  }
+                }
                 gateRes = {
                   accepted: false,
                   verdict: {
                     pass: false,
                     method: "none" as const,
-                    reasons: ["verification failed (fail-closed)"],
+                    reasons: [
+                      error instanceof RouterTimeoutError
+                        ? `verification gate timed out after ${gateBudgetMs}ms`
+                        : "verification failed (fail-closed)",
+                    ],
                   },
                   dodSource: dod.source,
                 };

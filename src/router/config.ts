@@ -57,7 +57,13 @@ export interface EnforcementConfig {
   envGate?: string;
   perTier?: Record<string, "off" | "advisory" | "enforced">;
   guard?: { readDraftCap?: number; sameOpRetryCap?: number; blockSelfScript?: boolean; deliverableFirst?: boolean; budget?: number; blockScriptWrites?: boolean };
-  verify?: { require?: "never" | "whenDoDPresent" | "always"; requireExplicitDoD?: boolean; preferDeterministic?: boolean; graderPolicy?: "atLeastProducerTier"; graderTemperature?: number; minGraderTier?: string | null };
+  verify?: { require?: "never" | "whenDoDPresent" | "always"; requireExplicitDoD?: boolean; preferDeterministic?: boolean; graderPolicy?: "atLeastProducerTier"; graderTemperature?: number; minGraderTier?: string | null;
+    /** Ceiling for one producer `session.prompt` turn, in ms. Default 600000. */
+    delegateTimeoutMs?: number;
+    /** Ceiling for one grader `session.prompt` turn, in ms. Default 60000. */
+    graderTimeoutMs?: number;
+    /** Ceiling for the whole acceptance gate, in ms. Default 90000. */
+    gateBudgetMs?: number };
   escalate?: { floorTier?: string | null; ladder?: string[]; maxAttemptsPerTier?: number; maxTotalAttempts?: number; costCeiling?: { base?: string; multiple?: number } };
   proportional?: { trivialBypass?: boolean; trivialClassifier?: string };
 }
