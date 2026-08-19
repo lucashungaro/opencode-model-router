@@ -24,9 +24,26 @@ export interface ReasoningConfig {
   summary?: "auto" | "always" | "never";
 }
 
+/**
+ * Provider-agnostic reasoning effort for a tier.
+ *
+ * `xhigh` and `max` exist because Anthropic's adaptive models accept them;
+ * OpenAI's `reasoning_effort` stops at `high`, so the registration path
+ * downgrades those two with a warning (see `src/router/agent-options.ts`).
+ */
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+
 export interface TierConfig {
   model: string;
   variant?: string;
+  /**
+   * Provider-agnostic effort. Loses to an explicit `thinking` budget on
+   * Anthropic and to an explicit `reasoning.effort` on OpenAI. When unset, no
+   * effort key is registered at all.
+   */
+  effort?: EffortLevel;
   thinking?: ThinkingConfig;
   reasoning?: ReasoningConfig;
   costRatio?: number;

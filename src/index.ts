@@ -11,8 +11,8 @@ import {
   findProjectOverride,
 } from "./router/config";
 import type { RouterConfig, TierConfig, Preset, ModeConfig } from "./router/config";
+import { buildAgentOptions, warnAgentOptionsEffortOnce } from "./router/agent-options";
 import {
-  buildAgentOptions,
   buildTiersOutput,
   buildPresetList,
   buildPresetSwitched,
@@ -886,9 +886,15 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         }
 
         // Apply provider-specific options
-        const opts = buildAgentOptions(tier);
+        const opts = buildAgentOptions(tier, name);
         if (Object.keys(opts).length > 0) {
           agentDef.options = opts;
+        }
+        if (typeof opts.effort === "string") {
+          warnAgentOptionsEffortOnce(
+            "anthropic-effort-dependency",
+            "effort on Anthropic models requires the opencode-anthropic-fix plugin (commit 307aea9+ for fable/mythos); non-adaptive Claude models (e.g. haiku) silently strip effort at the API layer, and without the plugin a top-level effort can break Claude-Code billing fingerprinting",
+          );
         }
 
         opencodeConfig.agent[name] = agentDef;
