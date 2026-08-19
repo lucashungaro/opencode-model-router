@@ -305,6 +305,40 @@ describe("createTrajectoryStore", () => {
     expect(store.get("s1")?.toolCallCount).toBe(2);
   });
 
+  it("recordResume increments dispatch count on an existing session", () => {
+    const store = createTrajectoryStore();
+    store.ensure("s1");
+    store.recordResume("s1");
+    expect(store.get("s1")?.dispatches).toBe(2);
+  });
+
+  it("recordResume counts a dispatch without counting an escalation, attempt or cost", () => {
+    const store = createTrajectoryStore();
+    const before = store.ensure("resume-is-dispatch", "fast");
+    recordToolEvent(before, { tool: "write", readOnly: false });
+    const beforeEscalations = before.escalations;
+    const beforeAttempts = before.attempts;
+    const beforeCostUnits = before.costUnits;
+
+    store.recordResume("resume-is-dispatch", "fast");
+
+    const after = store.get("resume-is-dispatch");
+    expect(after?.dispatches).toBe(2);
+    expect(after?.escalations).toBe(beforeEscalations);
+    expect(after?.attempts).toBe(beforeAttempts);
+    expect(after?.costUnits).toBe(beforeCostUnits);
+    expect(after?.toolCallCount).toBe(1);
+  });
+
+  it("recordResume ensure-creates unknown sessions, then counts the resume as dispatch 2", () => {
+    const store = createTrajectoryStore();
+    store.recordResume("missing");
+
+    // ensureState starts brand-new trajectories at dispatch 1; recordResume then
+    // bumps for the resumed dispatch that caused creation.
+    expect(store.get("missing")?.dispatches).toBe(2);
+  });
+
   it("setStopReason is a no-op for an unknown session (does not throw)", () => {
     const store = createTrajectoryStore();
     expect(() => store.setStopReason("unknown", "cap")).not.toThrow();
