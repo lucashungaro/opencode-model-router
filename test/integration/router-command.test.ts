@@ -231,27 +231,26 @@ describe("router-command — model catalog", () => {
     const h: any = await ModelRouterPlugin(ctx as any);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      // catalog-derived warnings only; the orphan-pattern warning is pure config
-      // analysis and is deliberately emitted on turn 1
-      const catalogWarnings = () =>
-        warn.mock.calls
-          .map((c) => String(c[0]))
-          .filter((m) => !m.includes("strong-model pattern"));
+      const warnings = () => warn.mock.calls.map((c) => String(c[0]));
 
+      // turn 1 emits nothing at all: both the stale-model check and the
+      // orphaned-pattern check need the catalog, so both are deferred
       await h["chat.message"]({ sessionID: "s1" }, { parts: [] });
-      expect(catalogWarnings()).toEqual([]);
+      expect(warnings()).toEqual([]);
 
       await flush();
 
       await h["chat.message"]({ sessionID: "s1" }, { parts: [] });
-      const late = catalogWarnings();
-      expect(late.length).toBeGreaterThan(0);
+      const late = warnings();
       expect(late.some((m) => m.includes("model-missing"))).toBe(true);
+      // this mock catalog serves only claude-haiku-4-5, so the default
+      // strong-model patterns are genuinely dead in this environment
+      expect(late.some((m) => m.includes("strong-model pattern"))).toBe(true);
 
       // and it stays a one-shot: a third turn adds nothing
       const before = late.length;
       await h["chat.message"]({ sessionID: "s1" }, { parts: [] });
-      expect(catalogWarnings()).toHaveLength(before);
+      expect(warnings()).toHaveLength(before);
     } finally {
       warn.mockRestore();
     }

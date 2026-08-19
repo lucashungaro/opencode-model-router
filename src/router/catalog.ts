@@ -142,8 +142,8 @@ export function suggestModels(
 
 /**
  * Strong-model patterns (`cfg.modelGenerations.strong`, else
- * {@link DEFAULT_STRONG_MODEL_PATTERNS}) that match NO tier model of the active
- * preset. Report-only: the router never rewrites the user's pattern list.
+ * {@link DEFAULT_STRONG_MODEL_PATTERNS}) that match NO model in the live
+ * catalog. Report-only: the router never rewrites the user's pattern list.
  *
  * Why this exists: prompt-style resolution is a case-insensitive substring match
  * (`isStrongModel` in ./prompts). When a provider renames a model
@@ -151,27 +151,38 @@ export function suggestModels(
  * stops matching, the tier drops back to the prescriptive prompt, and nothing
  * anywhere errors. This surfaces that silence.
  *
- * Scope decision: patterns are compared against the ACTIVE PRESET's tier models
- * only, never the whole catalog, because the active preset is what actually
- * decides prompt style. That also makes this check catalog-independent (pure
- * config analysis), so it still works when the catalog fetch failed.
+ * Comparison base: the CATALOG, not the active preset. The default pattern list
+ * is a cross-preset union by construction (see DEFAULT_STRONG_MODEL_PATTERNS in
+ * ./config), so any single preset leaves most of it unmatched — checking against
+ * the active preset would warn on every clean install. A pattern matching no
+ * model any configured provider serves is dead in THIS environment, which is
+ * exactly the rename signal we want. Refs are compared as `provider/model`,
+ * mirroring `isStrongModel`, which is fed the full provider-prefixed tier model.
+ *
+ * Never cries wolf: an empty catalog (fetch failed) or a catalog with no models
+ * returns `[]`, like `validateModels`.
  *
  * Gate: reported only when at least one active tier resolves its style by `auto`
  * (`promptStyle` absent or `"auto"`). With every tier pinned to an explicit
  * style the pattern list decides nothing, so an orphan there is harmless noise.
  */
-export function findOrphanedStrongPatterns(cfg: RouterConfig): string[] {
+export function findOrphanedStrongPatterns(
+  cfg: RouterConfig,
+  catalog: Catalog,
+): string[] {
+  if (isCatalogEmpty(catalog)) return [];
+
   const tiers = Object.values(getActiveTiers(cfg) ?? {});
   const usesAuto = tiers.some(
     (t) => t?.promptStyle === undefined || t.promptStyle === "auto",
   );
   if (!usesAuto) return [];
 
-  const models = tiers
-    .map((t) => t?.model)
-    .filter((m): m is string => typeof m === "string" && m.length > 0)
-    .map((m) => m.toLowerCase());
-  if (models.length === 0) return [];
+  const refs: string[] = [];
+  for (const p of catalog.providers) {
+    for (const m of p.models) refs.push(`${p.id}/${m.id}`.toLowerCase());
+  }
+  if (refs.length === 0) return [];
 
   const raw = cfg.modelGenerations?.strong ?? DEFAULT_STRONG_MODEL_PATTERNS;
   const patterns = raw.filter(
@@ -179,7 +190,7 @@ export function findOrphanedStrongPatterns(cfg: RouterConfig): string[] {
   );
   // Same semantics as isStrongModel(): case-insensitive substring match.
   const orphans = patterns.filter(
-    (p) => !models.some((m) => m.includes(p.toLowerCase())),
+    (p) => !refs.some((r) => r.includes(p.toLowerCase())),
   );
   return [...new Set(orphans)];
 }
@@ -256,6 +267,10 @@ function validateFallbackChains(
 
   for (const [providerId, chain] of Object.entries(active.map)) {
     if (!providerId) continue;
+    // ./protocol ignores a non-array chain wholesale, so there is nothing left
+    // to warn about for this key — skip it the same way rather than reporting
+    // an unknown provider for a chain that could never fire anyway.
+    if (!Array.isArray(chain)) continue;
 
     if (
       !isCatalogEmpty(catalog) &&
@@ -274,13 +289,13 @@ function validateFallbackChains(
       });
     }
 
-    if (!Array.isArray(chain)) continue;
     for (const target of chain) {
       if (typeof target !== "string" || target.length === 0) continue;
       // ./protocol also drops a self-reference to the active preset, but that
       // is a no-op by design rather than a typo, so it is not reported.
       if (target === cfg.activePreset) continue;
-      if (Object.prototype.hasOwnProperty.call(cfg.presets ?? {}, target)) continue;
+      // Truthiness, for parity with ./protocol's `Boolean(cfg.presets[p])`.
+      if (cfg.presets?.[target]) continue;
       issues.push({
         tier: label,
         scope: "fallback",

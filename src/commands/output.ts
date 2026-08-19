@@ -313,10 +313,10 @@ export function buildModelsOutput(
  */
 export function formatOrphanedStrongPatterns(patterns: string[]): string {
   return [
-    "⚠ **Strong-model patterns matching no model in the active preset:**",
+    "⚠ **Strong-model patterns matching no model your providers serve:**",
     ...patterns.map((p) => `- \`${p}\``),
     "",
-    "Tiers on `promptStyle: auto` therefore resolve to the **prescriptive** prompt. If a provider renamed a model, update `modelGenerations.strong` in your overrides file (`/router overrides`).",
+    "Any tier on `promptStyle: auto` that relied on one of these now resolves to the **prescriptive** prompt, silently. If a provider renamed a model, update `modelGenerations.strong` in your overrides file (`/router overrides`).",
   ].join("\n");
 }
 

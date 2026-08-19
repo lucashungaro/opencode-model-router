@@ -297,10 +297,9 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   let catalogFetchStarted = false;
   /** undefined = not started or still in flight; null = the fetch failed. */
   let deferredCatalog: Catalog | null | undefined;
-  // One-shot guards so each passive warning runs at most once per plugin
+  // One-shot guard so the passive warnings run at most once per plugin
   // lifetime; re-validate on demand with /router.
   let catalogWarned = false;
-  let orphanWarned = false;
 
   const startCatalogFetch = (): void => {
     if (catalogFetchStarted) return;
@@ -706,25 +705,14 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       }
 
       // Once per lifetime, warn in the plugin log when the active preset points
-      // at models opencode's catalog says are missing or deprecated. This is the
-      // whole point of the catalog: a bad model id otherwise fails silently on
-      // every subagent dispatch. Orchestrator sessions only, and never throws.
-      // The catalog half is deferred (see startCatalogFetch): turn 1 starts the
-      // fetch, a later turn reports it.
+      // at models opencode's catalog says are missing or deprecated, or when a
+      // strong-model pattern matches nothing the configured providers serve.
+      // This is the whole point of the catalog: both failures are otherwise
+      // silent on every subagent dispatch. Orchestrator sessions only, never
+      // throws, and deferred (see startCatalogFetch): turn 1 starts the fetch,
+      // a later turn reports what it found.
       if (sid && !sessionStore.isSubagent(sid)) {
         try {
-          // Pure config analysis (no catalog needed, so no reason to defer it):
-          // strong-model patterns that match nothing in the active preset
-          // silently downgrade `auto` tiers to the prescriptive prompt.
-          if (!orphanWarned) {
-            orphanWarned = true;
-            for (const p of findOrphanedStrongPatterns(cfg)) {
-              console.warn(
-                `[model-router] strong-model pattern '${p}' matches no model in preset '${cfg.activePreset}' — auto prompt style falls back to prescriptive`,
-              );
-            }
-          }
-
           if (!catalogFetchStarted) {
             // Turn 1: kick the fetch off and move on. NO await here.
             startCatalogFetch();
@@ -733,6 +721,15 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
             catalogWarned = true;
             const catalog = deferredCatalog;
             if (catalog) {
+              // Strong-model patterns matching nothing any configured provider
+              // serves: `auto` tiers that relied on them silently downgrade to
+              // the prescriptive prompt. Catalog-dependent, so it rides the same
+              // deferred path — it is NOT emitted on turn 1.
+              for (const p of findOrphanedStrongPatterns(cfg, catalog)) {
+                console.warn(
+                  `[model-router] strong-model pattern '${p}' matches no model your providers serve — tiers on auto that relied on it fall back to prescriptive`,
+                );
+              }
               for (const it of validateModels(cfg, catalog)) {
                 const hint =
                   it.suggestions.length > 0
@@ -1204,10 +1201,11 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         const sub = (parts[0] ?? "").toLowerCase();
         let text: string;
         if (sub === "models") {
+          const catalog = await fetchCatalog();
           text = buildModelsOutput(
-            await fetchCatalog(),
+            catalog,
             parts.slice(1).join(" "),
-            findOrphanedStrongPatterns(cfg),
+            catalog ? findOrphanedStrongPatterns(cfg, catalog) : [],
           );
         } else {
           text = buildRouterOutput(cfg, args);

@@ -322,15 +322,17 @@ describe("buildModelsOutput — orphaned strong patterns", () => {
   it("appends the orphan warning to the model listing", () => {
     const out = buildModelsOutput(catalog, "", ["opus-4-8"]);
     expect(out).toContain("`anthropic/opus-4.8`");
-    expect(out).toContain("Strong-model patterns matching no model");
+    expect(out).toContain("matching no model your providers serve");
     expect(out).toContain("- `opus-4-8`");
+    // honest scope: only the auto tiers that relied on that pattern downgrade
+    expect(out).toContain("Any tier on `promptStyle: auto` that relied on one of these");
     expect(out).toContain("prescriptive");
   });
 
   it("warns even when the catalog could not be fetched", () => {
     const out = buildModelsOutput(null, "", ["opus-4-8"]);
     expect(out).toContain("Model catalog unavailable");
-    expect(out).toContain("Strong-model patterns matching no model");
+    expect(out).toContain("matching no model your providers serve");
   });
 
   it("says nothing when there are no orphans", () => {

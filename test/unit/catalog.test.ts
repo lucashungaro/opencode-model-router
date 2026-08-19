@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   findOrphanedStrongPatterns,
   normalizeCatalog,
@@ -8,8 +10,10 @@ import {
   suggestModels,
   validateModels,
   type Catalog,
+  type CatalogModel,
 } from "../../src/router/catalog";
 import { isStrongModel } from "../../src/router/prompts";
+import { validateConfig } from "../../src/router/config";
 import type { PromptStyle, RouterConfig } from "../../src/router/config";
 
 function cfgWith(models: Record<string, string>): RouterConfig {
@@ -304,51 +308,84 @@ describe("findOrphanedStrongPatterns", () => {
     } as unknown as RouterConfig;
   }
 
-  it("returns nothing when every pattern matches some tier model", () => {
-    const cfg = strongCfg(
-      {
-        fast: "anthropic/claude-haiku-4-5",
-        heavy: "anthropic/claude-opus-4-8",
-      },
-      { strong: ["opus-4-8", "HAIKU-4-5"] },
+  /** A catalog serving exactly these `provider/model` refs. */
+  function catalogOf(...refs: string[]): Catalog {
+    const byProvider = new Map<string, CatalogModel[]>();
+    for (const ref of refs) {
+      const parsed = parseModelRef(ref)!;
+      const list = byProvider.get(parsed.providerId) ?? [];
+      list.push({ id: parsed.modelId, status: "active" });
+      byProvider.set(parsed.providerId, list);
+    }
+    return {
+      providers: [...byProvider].map(([id, models]) => ({ id, models })),
+    };
+  }
+
+  // The default pattern list is a cross-preset union, so comparing it against a
+  // single preset's models would warn on every clean install. These two pin the
+  // shipped config against a healthy catalog: silence is the contract.
+  const shippedCfg = validateConfig(
+    JSON.parse(readFileSync(join(process.cwd(), "tiers.json"), "utf-8")),
+  );
+
+  it("says nothing for the shipped config against a healthy catalog", () => {
+    const healthy = catalogOf(
+      "anthropic/claude-opus-4-8",
+      "anthropic/claude-fable-5",
+      "anthropic/claude-mythos-5",
+      "anthropic/claude-haiku-4-5",
     );
-    expect(findOrphanedStrongPatterns(cfg)).toEqual([]);
+    expect(findOrphanedStrongPatterns(shippedCfg, healthy)).toEqual([]);
   });
 
-  it("flags the provider-rename case that silently downgrades prompt style", () => {
-    // the rename `claude-opus-4-8` -> `opus-4.8` (dot) stops matching
-    const cfg = strongCfg(
-      { heavy: "anthropic/opus-4.8" },
-      { strong: ["claude-fable-5", "opus-4-8"] },
+  it("flags the provider-rename case the check exists for", () => {
+    // the rename `claude-opus-4-8` -> `opus-4.8` (dot) stops matching, while
+    // the other two default patterns are still served
+    const renamed = catalogOf(
+      "anthropic/opus-4.8",
+      "anthropic/claude-fable-5",
+      "anthropic/claude-mythos-5",
     );
-    expect(findOrphanedStrongPatterns(cfg)).toEqual([
-      "claude-fable-5",
+    expect(findOrphanedStrongPatterns(shippedCfg, renamed)).toEqual([
       "opus-4-8",
     ]);
     // and the downgrade it warns about is real
-    expect(isStrongModel("anthropic/opus-4.8", cfg)).toBe(false);
+    expect(isStrongModel("anthropic/opus-4.8", shippedCfg)).toBe(false);
   });
 
-  it("matches case-insensitively, exactly like isStrongModel", () => {
+  it("never cries wolf when the catalog is empty or model-less", () => {
+    const cfg = strongCfg({ fast: "openai/gpt-5" }, { strong: ["opus-4-8"] });
+    expect(findOrphanedStrongPatterns(cfg, { providers: [] })).toEqual([]);
+    expect(
+      findOrphanedStrongPatterns(cfg, { providers: [{ id: "openai", models: [] }] }),
+    ).toEqual([]);
+  });
+
+  it("matches the full provider/model ref, case-insensitively, like isStrongModel", () => {
     const cfg = strongCfg(
       { heavy: "anthropic/CLAUDE-Opus-4-8" },
-      { strong: ["opus-4-8"] },
+      { strong: ["OPUS-4-8", "anthropic/claude-opus"] },
     );
-    expect(findOrphanedStrongPatterns(cfg)).toEqual([]);
+    const cat = catalogOf("anthropic/CLAUDE-Opus-4-8");
+    expect(findOrphanedStrongPatterns(cfg, cat)).toEqual([]);
     expect(isStrongModel("anthropic/CLAUDE-Opus-4-8", cfg)).toBe(true);
   });
 
-  it("falls back to the default pattern list when none is configured", () => {
-    const cfg = strongCfg({ fast: "openai/gpt-5" });
-    // DEFAULT_STRONG_MODEL_PATTERNS: claude-fable-5, claude-mythos-5, opus-4-8
-    expect(findOrphanedStrongPatterns(cfg)).toEqual([
-      "claude-fable-5",
-      "claude-mythos-5",
+  it("judges the catalog, not the active preset", () => {
+    // the pattern matches a model no tier of the active preset uses — still
+    // reachable in this environment, so not an orphan
+    const cfg = strongCfg({ fast: "openai/gpt-5" }, { strong: ["opus-4-8"] });
+    expect(
+      findOrphanedStrongPatterns(cfg, catalogOf("anthropic/claude-opus-4-8")),
+    ).toEqual([]);
+    expect(findOrphanedStrongPatterns(cfg, catalogOf("openai/gpt-5"))).toEqual([
       "opus-4-8",
     ]);
   });
 
   it("stays silent when no tier resolves its prompt style by auto", () => {
+    const cat = catalogOf("openai/gpt-5");
     const cfg = strongCfg(
       { fast: "openai/gpt-5", heavy: "openai/gpt-5-pro" },
       {
@@ -356,13 +393,13 @@ describe("findOrphanedStrongPatterns", () => {
         promptStyle: { fast: "prescriptive", heavy: "goal-oriented" },
       },
     );
-    expect(findOrphanedStrongPatterns(cfg)).toEqual([]);
+    expect(findOrphanedStrongPatterns(cfg, cat)).toEqual([]);
     // one tier back on auto is enough to make the orphan matter again
     const auto = strongCfg(
       { fast: "openai/gpt-5", heavy: "openai/gpt-5-pro" },
       { strong: ["opus-4-8"], promptStyle: { fast: "prescriptive" } },
     );
-    expect(findOrphanedStrongPatterns(auto)).toEqual(["opus-4-8"]);
+    expect(findOrphanedStrongPatterns(auto, cat)).toEqual(["opus-4-8"]);
   });
 
   it("ignores garbage entries and de-duplicates", () => {
@@ -370,6 +407,8 @@ describe("findOrphanedStrongPatterns", () => {
       { fast: "openai/gpt-5" },
       { strong: ["opus-4-8", "opus-4-8", "", null as unknown as string] },
     );
-    expect(findOrphanedStrongPatterns(cfg)).toEqual(["opus-4-8"]);
+    expect(findOrphanedStrongPatterns(cfg, catalogOf("openai/gpt-5"))).toEqual([
+      "opus-4-8",
+    ]);
   });
 });
