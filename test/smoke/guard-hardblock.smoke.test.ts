@@ -7,6 +7,10 @@
  * (readDraftCap=3) fires on the 4th consecutive non-producing read and the
  * forcingMessage always contains "NEXT:".
  *
+ * NB: this only fires because the recon dispatch is classified NON-trivial
+ * (multi-file, sequenced).  A single-shot lookup is exempted by proportional
+ * bypass (GA-6) by design; see classifyTrivial in src/router/sessions.ts.
+ *
  * GATED: runs only when RUN_OC_SMOKE=1 is set AND the suite is invoked
  * explicitly (e.g. `npx vitest run test/smoke/guard-hardblock.smoke.test.ts`).
  * Excluded from default `npm test` by vitest.config.ts exclude pattern.
@@ -22,6 +26,56 @@ const d = RUN ? describe : describe.skip;
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const OUT_DIR = path.join(REPO_ROOT, "tmp", "smoke");
 const OUT_FILE = path.join(OUT_DIR, "guard-hardblock.json");
+
+/** Run `opencode run` with enforcement forced on and capture the JSON stream. */
+function runEnforced(prompt: string, outFile: string) {
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  const start = Date.now();
+
+  const result = spawnSync(
+    "opencode",
+    [
+      "run",
+      prompt,
+      "--model",
+      "anthropic/claude-haiku-4-5",
+      "--format",
+      "json",
+      "--dangerously-skip-permissions",
+    ],
+    {
+      cwd: REPO_ROOT,
+      env: { ...process.env, MODEL_ROUTER_ENFORCE: "1" },
+      encoding: "utf8",
+      maxBuffer: 20 * 1024 * 1024,
+      timeout: 180_000,
+    }
+  );
+
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+  console.log(`opencode exited in ${elapsed}s, status=${result.status}`);
+
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
+
+  fs.writeFileSync(
+    outFile,
+    JSON.stringify(
+      { exitCode: result.status, elapsed, stdout, stderr: stderr.slice(0, 4000) },
+      null,
+      2
+    )
+  );
+
+  if (result.status !== 0) {
+    const excerpt = (stdout + "\n" + stderr).slice(0, 600);
+    throw new Error(
+      `opencode exited with code ${result.status}.\nExcerpt:\n${excerpt}`
+    );
+  }
+
+  return { stdout, outFile };
+}
 
 // Benign recon prompt: asks a fast subagent to read 6 files one-at-a-time.
 // readDraftCap=3 means after 3 consecutive reads (non-producing actions),
@@ -39,63 +93,22 @@ const PROMPT =
 //   "read budget"   → model says "I've exhausted my read budget" when blocked
 const MARKERS = ["NEXT:", "read/draft", "budget exhausted", "redundant", "read budget"];
 
+// The opposite arm — a genuinely trivial dispatch must NOT be hard-blocked —
+// is asserted deterministically in test/integration/proportional-downgrade.test.ts
+// rather than here. A real-session trivial arm cannot be made reliable on this
+// host: subagent prompts arrive with a `Working directory:` footer naming a
+// directory that does not exist (not emitted by this plugin), so whether the
+// subagent completes a one-file lookup or bails depends on whether the model
+// honours that footer. Absence of guard markers from a subagent that never ran
+// the read proves nothing, so the arm would pass vacuously.
+
 d("guard hard-block smoke", () => {
   it(
     "read_budget guard fires inside a subagent session (benign recon trigger)",
     () => {
-      fs.mkdirSync(OUT_DIR, { recursive: true });
+      const { stdout } = runEnforced(PROMPT, OUT_FILE);
 
-      const start = Date.now();
-
-      const result = spawnSync(
-        "opencode",
-        [
-          "run",
-          PROMPT,
-          "--model",
-          "anthropic/claude-haiku-4-5",
-          "--format",
-          "json",
-          "--dangerously-skip-permissions",
-        ],
-        {
-          cwd: REPO_ROOT,
-          env: { ...process.env, MODEL_ROUTER_ENFORCE: "1" },
-          encoding: "utf8",
-          maxBuffer: 20 * 1024 * 1024,
-          timeout: 180_000,
-        }
-      );
-
-      const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-      console.log(`opencode exited in ${elapsed}s, status=${result.status}`);
-
-      const stdout = result.stdout ?? "";
-      const stderr = result.stderr ?? "";
-
-      fs.writeFileSync(
-        OUT_FILE,
-        JSON.stringify(
-          {
-            exitCode: result.status,
-            elapsed,
-            stdout,
-            stderr: stderr.slice(0, 4000),
-          },
-          null,
-          2
-        )
-      );
-
-      // 1. Exit code must be 0
-      if (result.status !== 0) {
-        const excerpt = (stdout + "\n" + stderr).slice(0, 600);
-        throw new Error(
-          `opencode exited with code ${result.status}.\nExcerpt:\n${excerpt}`
-        );
-      }
-
-      // 2. At least one read-guard marker must appear (case-insensitive)
+      // At least one read-guard marker must appear (case-insensitive)
       const lower = stdout.toLowerCase();
       const found = MARKERS.filter((m) => lower.includes(m.toLowerCase()));
 
@@ -112,4 +125,5 @@ d("guard hard-block smoke", () => {
     },
     185_000
   );
+
 });
