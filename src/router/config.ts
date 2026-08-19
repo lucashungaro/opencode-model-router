@@ -228,21 +228,17 @@ export function resolvePresetName(
   );
 }
 
-export function validateConfig(raw: unknown): RouterConfig {
-  if (typeof raw !== "object" || raw === null) {
-    throw new Error("tiers.json: expected a JSON object at root");
-  }
+/** True for a non-null, non-array object literal. */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
 
-  const obj = raw as Record<string, unknown>;
-
-  if (typeof obj.activePreset !== "string" || !obj.activePreset) {
-    throw new Error("tiers.json: 'activePreset' must be a non-empty string");
-  }
-  if (
-    typeof obj.presets !== "object" ||
-    obj.presets === null ||
-    Array.isArray(obj.presets)
-  ) {
+/**
+ * Shape of every preset and every tier within it. Returns the presets map so
+ * the caller can hand it to validateActivePreset without re-narrowing.
+ */
+function validatePresets(obj: Record<string, unknown>): Record<string, unknown> {
+  if (!isPlainObject(obj.presets)) {
     throw new Error("tiers.json: 'presets' must be a non-null object");
   }
 
@@ -284,6 +280,14 @@ export function validateConfig(raw: unknown): RouterConfig {
     }
   }
 
+  return presets;
+}
+
+/** `activePreset` names a preset that exists. */
+function validateActivePreset(
+  obj: Record<string, unknown>,
+  presets: Record<string, unknown>,
+): void {
   // `activePreset` has to name a preset that actually exists. It is the key most
   // likely to be typo'd in a hand-edited override file, and without this the bad
   // name loads clean and routing quietly runs on whatever the state file or the
@@ -301,7 +305,10 @@ export function validateConfig(raw: unknown): RouterConfig {
       `tiers.json: 'activePreset' is '${activePresetName}', which is not a defined preset (defined: ${presetNames.join(", ")})`,
     );
   }
+}
 
+/** Top-level keys that are required, or optional with a fixed type. */
+function validateCoreKeys(obj: Record<string, unknown>): void {
   if (!Array.isArray(obj.rules)) {
     throw new Error("tiers.json: 'rules' must be an array of strings");
   }
@@ -311,14 +318,12 @@ export function validateConfig(raw: unknown): RouterConfig {
   if (obj.antiNarration !== undefined && typeof obj.antiNarration !== "boolean") {
     throw new Error("tiers.json: 'antiNarration' must be a boolean");
   }
+}
 
+function validateModes(obj: Record<string, unknown>): void {
   // Validate modes if present
   if (obj.modes !== undefined) {
-    if (
-      typeof obj.modes !== "object" ||
-      obj.modes === null ||
-      Array.isArray(obj.modes)
-    ) {
+    if (!isPlainObject(obj.modes)) {
       throw new Error("tiers.json: 'modes' must be an object");
     }
     const modes = obj.modes as Record<string, unknown>;
@@ -339,14 +344,12 @@ export function validateConfig(raw: unknown): RouterConfig {
       }
     }
   }
+}
 
+function validateTierCaps(obj: Record<string, unknown>): void {
   // Validate tierCaps if present
   if (obj.tierCaps !== undefined) {
-    if (
-      typeof obj.tierCaps !== "object" ||
-      obj.tierCaps === null ||
-      Array.isArray(obj.tierCaps)
-    ) {
+    if (!isPlainObject(obj.tierCaps)) {
       throw new Error("tiers.json: 'tierCaps' must be an object");
     }
     const tc = obj.tierCaps as Record<string, unknown>;
@@ -358,14 +361,12 @@ export function validateConfig(raw: unknown): RouterConfig {
       }
     }
   }
+}
 
+function validateTierPrompts(obj: Record<string, unknown>): void {
   // Validate tierPrompts if present
   if (obj.tierPrompts !== undefined) {
-    if (
-      typeof obj.tierPrompts !== "object" ||
-      obj.tierPrompts === null ||
-      Array.isArray(obj.tierPrompts)
-    ) {
+    if (!isPlainObject(obj.tierPrompts)) {
       throw new Error("tiers.json: 'tierPrompts' must be an object");
     }
     const tp = obj.tierPrompts as Record<string, unknown>;
@@ -377,14 +378,12 @@ export function validateConfig(raw: unknown): RouterConfig {
       }
     }
   }
+}
 
+function validateTaskPatterns(obj: Record<string, unknown>): void {
   // Validate taskPatterns if present
   if (obj.taskPatterns !== undefined) {
-    if (
-      typeof obj.taskPatterns !== "object" ||
-      obj.taskPatterns === null ||
-      Array.isArray(obj.taskPatterns)
-    ) {
+    if (!isPlainObject(obj.taskPatterns)) {
       throw new Error("tiers.json: 'taskPatterns' must be an object");
     }
     const tp = obj.taskPatterns as Record<string, unknown>;
@@ -396,14 +395,12 @@ export function validateConfig(raw: unknown): RouterConfig {
       }
     }
   }
+}
 
+function validateEnforcement(obj: Record<string, unknown>): void {
   // Validate enforcement if present (optional — absent means no enforcement)
   if (obj.enforcement !== undefined) {
-    if (
-      typeof obj.enforcement !== "object" ||
-      obj.enforcement === null ||
-      Array.isArray(obj.enforcement)
-    ) {
+    if (!isPlainObject(obj.enforcement)) {
       throw new Error("tiers.json: enforcement must be an object");
     }
     const enforcement = obj.enforcement as Record<string, unknown>;
@@ -531,6 +528,36 @@ export function validateConfig(raw: unknown): RouterConfig {
       }
     }
   }
+}
+
+/**
+ * Validate a raw parsed config. Strict and throwing by design: the bundled
+ * tiers.json must be valid on its own, and loadConfig turns a throw from an
+ * override layer into a warning plus a fallback rather than a crash.
+ *
+ * Section order matters and is preserved from when this was one function: a
+ * config with several problems reports the same first error it always did.
+ */
+export function validateConfig(raw: unknown): RouterConfig {
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("tiers.json: expected a JSON object at root");
+  }
+
+
+  const obj = raw as Record<string, unknown>;
+
+  if (typeof obj.activePreset !== "string" || !obj.activePreset) {
+    throw new Error("tiers.json: 'activePreset' must be a non-empty string");
+  }
+
+  const presets = validatePresets(obj);
+  validateActivePreset(obj, presets);
+  validateCoreKeys(obj);
+  validateModes(obj);
+  validateTierCaps(obj);
+  validateTierPrompts(obj);
+  validateTaskPatterns(obj);
+  validateEnforcement(obj);
 
   return raw as RouterConfig;
 }
@@ -542,9 +569,6 @@ export function validateConfig(raw: unknown): RouterConfig {
  * override are skipped so they never blow away a base value.
  */
 export function deepMerge(base: unknown, override: unknown): unknown {
-  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
-    typeof v === "object" && v !== null && !Array.isArray(v);
-
   if (!isPlainObject(base) || !isPlainObject(override)) {
     return override;
   }
