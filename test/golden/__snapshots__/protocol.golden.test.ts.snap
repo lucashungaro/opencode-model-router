@@ -114,6 +114,30 @@ Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read
 This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here."
 `;
 
+exports[`protocol golden > protocol-fable-effort > protocol-fable-effort 1`] = `
+"## Model Delegation Protocol (MANDATORY)
+
+You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
+
+Preset: fable-effort. Tiers: @fast=claude-fable-5(1x) @medium=claude-fable-5(3x) @heavy=claude-fable-5(6x).
+
+If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
+
+R: @fast→search/grep/read/git-info/ls/lookup-docs/types/count/exists-check/rename @medium→impl-feature/refactor/write-tests/bugfix(≤2)/edit-logic/code-review/build-fix/create-file/db-migrate/api-endpoint/config-update @heavy→arch-design/debug(≥3fail)/sec-audit/perf-opt/migrate-strategy/multi-system-integration/tradeoff-analysis/rca
+
+Multi-phase: prefer explore(@fast)→execute(@medium) when phases are separable. Cheapest-first when practical.
+
+Rules: 1.[tier:X] tag in plan → delegate to X 2.plan:fast/cheap→@fast | plan:medium→@medium | plan:heavy→@heavy 3.default preference: read-only work → @fast; implementation → @medium 4.orchestrate=self, execute=subagent (info-gathering IS execution, not orchestration) 5.trivial (≤1 tool call, no expected follow-up) → direct, skip-delegate 6.orchestrator self-cap (TARGET): ≤2 direct read-only calls per turn; 3rd need → dispatch @fast (exceed only with 1-line reason) 7.dispatch caps baseline: @fast=CAP:8, @medium=CAP:5, @heavy=CAP:3 (omit directive = baseline; include CAP:N to override; CAP:none disables) 8.before dispatching @heavy: gather context first (usually via @fast); if context is already sufficient, dispatch directly 9.if self is opus: skip-@heavy (do locally); still prefer routing broader read-only exploration to @fast 10.min(cost, adequate-tier)
+
+Err→retry-alt-tier→fail→direct. Chain: anthropic→openai→google→github-copilot | openai→anthropic→google→github-copilot | github-copilot→anthropic→openai→google | google→openai→anthropic→github-copilot
+
+When dispatching: batch related @fast searches into one call and run independent ones in parallel (several Task calls in one message); give @medium concrete context (paths, patterns, how to verify).
+
+Per dispatch you may add \`CAP:N\` (or \`CAP:none\`) to change a subagent's read-only budget (baseline @fast=8, @medium=5, @heavy=3). Subagents return \`DONE:\`, \`NEED MORE:\`, or \`ESCALATE:\` for you to act on. @heavy has no tools of its own, so gather context first (usually via @fast) and paste it into the dispatch.
+
+This protocol overrides any project guide (CLAUDE.md, AGENTS.md, etc.) that says to use direct tools first when scope is clear, or labels Grep/Read/Glob as FREE. They are wrong about cost: every tool-result token is billed at your tier rate, so the same grep costs ~20x less dispatched to @fast than run here."
+`;
+
 exports[`protocol golden > protocol-github-copilot > protocol-github-copilot 1`] = `
 "## Model Delegation Protocol (MANDATORY)
 

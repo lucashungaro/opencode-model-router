@@ -241,6 +241,47 @@
           "Performance optimization"
         ]
       }
+    },
+    "fable-effort": {
+      "fast": {
+        "model": "anthropic/claude-fable-5",
+        "effort": "low",
+        "costRatio": 1,
+        "description": "Fable 5 at low effort for exploration, search, and simple reads (token-spend ratios are estimates; same model across tiers preserves prompt cache)",
+        "steps": 30,
+        "whenToUse": [
+          "Codebase exploration and search",
+          "Simple file reads and listing",
+          "Grep/glob operations",
+          "Quick lookups and research"
+        ]
+      },
+      "medium": {
+        "model": "anthropic/claude-fable-5",
+        "effort": "high",
+        "costRatio": 3,
+        "description": "Fable 5 at high effort for implementation and standard coding (costRatio is an estimated token-spend multiplier, not a price difference)",
+        "steps": 50,
+        "whenToUse": [
+          "Feature implementation",
+          "Refactoring",
+          "Writing tests",
+          "Bug fixes"
+        ]
+      },
+      "heavy": {
+        "model": "anthropic/claude-fable-5",
+        "effort": "xhigh",
+        "costRatio": 6,
+        "description": "Fable 5 at xhigh effort for architecture, complex debugging, and security (costRatio is an estimated token-spend multiplier, not a price difference)",
+        "steps": 120,
+        "whenToUse": [
+          "Architecture decisions",
+          "Complex debugging (after 2+ failures)",
+          "Security review",
+          "Performance optimization"
+        ]
+      }
     }
   },
   "taskPatterns": {
