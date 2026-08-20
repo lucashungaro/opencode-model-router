@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-08-19
+
+Minor release: every vendor preset is refreshed to the current generation of models.
+No routing logic changed — the tier structure, patterns and enforcement behavior are
+the same, only the model ids (and the reasoning effort attached to them) move forward.
+
+### Changed
+
+- **`anthropic` preset** now routes `fast` → `sonnet-5`, `medium` → `opus-5` at `high`
+  effort, and `heavy` → `fable-5` at `max`.
+- **`openai` preset** now routes `fast` → `gpt-5.6-luna-fast`, `medium` →
+  `gpt-5.6-terra-fast` at `high` effort, and `heavy` → `gpt-5.6-sol-fast` at `xhigh`.
+- **`google` preset** now routes `fast` → `gemini-3.5-flash-lite`, `medium` →
+  `gemini-3.7-flash`, and `heavy` → `gemini-3.1-pro-preview`.
+- **`github-copilot` preset** now routes `medium` → `claude-sonnet-5` and `heavy` →
+  `claude-fable-5`.
+- **`hybrid` preset** now routes `medium` → `gpt-5.6-terra-fast` and `heavy` →
+  `claude-opus-5` at `max` effort.
+
 ## [1.7.0] - 2026-08-19
 
 Minor release: live model-catalog discovery and validation — `/router models`, stale-model

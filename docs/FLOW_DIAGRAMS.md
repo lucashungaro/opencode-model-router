@@ -201,7 +201,7 @@
 │ Builds multi-line string:                                       │
 │                                                                 │
 │ ## Model Delegation Protocol                                    │
-│ Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) ...       │
+│ Preset: anthropic. Tiers: @fast=claude-sonnet-5(1x) ...        │
 │ R: @fast→broader read-only exploration ... @medium→impl ...    │
 │ @heavy→arch ...                                                │
 │ Multi-phase: prefer explore(@fast)→execute(@medium) when sep... │

@@ -275,7 +275,7 @@ registered with. It is a **per-tier** field and lives next to `model` in a prese
 {
   "presets": {
     "anthropic": {
-      "heavy": { "model": "anthropic/claude-opus-4-8", "promptStyle": "auto" }
+      "heavy": { "model": "anthropic/claude-fable-5", "promptStyle": "auto" }
     }
   }
 }
@@ -298,7 +298,7 @@ prompt, exactly as before.
 
 | Field | Type | Default |
 |---|---|---|
-| `modelGenerations.strong` | `string[]` | `["claude-fable-5", "claude-mythos-5", "opus-4-8"]` |
+| `modelGenerations.strong` | `string[]` | `["claude-fable-5", "claude-mythos-5", "opus-4-8", "claude-opus-5"]` |
 | `modelGenerations.claude5x` | `string[]` | `["claude-fable-5", "claude-mythos-5"]` |
 
 `strong` is a superset of `claude5x` by construction: every Claude 5.x model is treated as
@@ -333,18 +333,20 @@ pinned to an explicit style the pattern list decides nothing.
 ### Which shipped presets are affected
 
 No bundled preset sets `promptStyle`, so every tier resolves through `auto`. Against the
-shipped `tiers.json` that is **five tiers** now receiving the goal-oriented prompt:
+shipped `tiers.json` that is **seven tiers** now receiving the goal-oriented prompt:
 
 | Preset / tier | Model | Resolved style |
 |---|---|---|
-| `anthropic.heavy` | `anthropic/claude-opus-4-8` | `goal-oriented` |
-| `hybrid.heavy` | `anthropic/claude-opus-4-8` | `goal-oriented` |
+| `anthropic.medium` | `anthropic/claude-opus-5` | `goal-oriented` |
+| `anthropic.heavy` | `anthropic/claude-fable-5` | `goal-oriented` |
+| `github-copilot.heavy` | `github-copilot/claude-fable-5` | `goal-oriented` |
+| `hybrid.heavy` | `anthropic/claude-opus-5` | `goal-oriented` |
 | `fable-effort.fast` | `anthropic/claude-fable-5` | `goal-oriented` |
 | `fable-effort.medium` | `anthropic/claude-fable-5` | `goal-oriented` |
 | `fable-effort.heavy` | `anthropic/claude-fable-5` | `goal-oriented` |
 
-Everything else stays `prescriptive`, including `github-copilot.heavy`
-(`claude-opus-4.6` does not match the `opus-4-8` pattern). To keep the previous wording on
+Everything else stays `prescriptive`, including `anthropic.fast`
+(`claude-sonnet-5` matches no pattern in the list). To keep the previous wording on
 a strong-model tier, set `"promptStyle": "prescriptive"` on it — either in the preset or in
 an overrides file.
 

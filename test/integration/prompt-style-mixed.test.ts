@@ -81,8 +81,8 @@ test("shipped hybrid preset mixes styles by model under auto", async () => {
 
     // No shipped preset sets promptStyle, so every tier resolves through auto.
     expect(agent.fast?.model).toBe("anthropic/claude-haiku-4-5");
-    expect(agent.medium?.model).toBe("openai/gpt-5.5-fast");
-    expect(agent.heavy?.model).toBe("anthropic/claude-opus-4-8");
+    expect(agent.medium?.model).toBe("openai/gpt-5.6-terra-fast");
+    expect(agent.heavy?.model).toBe("anthropic/claude-opus-5");
 
     // Weak models keep the enumerated prompts.
     expect(agent.fast?.prompt).toContain(PRESCRIPTIVE_MARKER);
