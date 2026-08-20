@@ -1,3 +1,4 @@
+import type { PluginLogger } from "./logger";
 /**
  * Registration-path agent options.
  *
@@ -25,9 +26,19 @@ import { isClaudeModel } from "./protocol";
 // two different mistakes are still two different warnings.
 const warnedAgentOptionsEffort = new Set<string>();
 
-export function warnAgentOptionsEffortOnce(key: string, message: string): void {
+export function warnAgentOptionsEffortOnce(
+  key: string,
+  message: string,
+  logger?: PluginLogger,
+): void {
   if (warnedAgentOptionsEffort.has(key)) return;
   warnedAgentOptionsEffort.add(key);
+  // Optional so this module keeps working for callers that have no client
+  // (unit tests, and buildAgentOptions being called directly).
+  if (logger) {
+    logger.warn(message, { key });
+    return;
+  }
   console.warn(`[model-router] ${message}`);
 }
 
@@ -54,7 +65,11 @@ function isOpenAIModel(model: string): boolean {
  * only ever present when something asked for it — an unset `effort` leaves no
  * trace in the returned object.
  */
-export function buildAgentOptions(tier: TierConfig, tierName = tier.model): Record<string, unknown> {
+export function buildAgentOptions(
+  tier: TierConfig,
+  tierName = tier.model,
+  logger?: PluginLogger,
+): Record<string, unknown> {
   const opts: Record<string, unknown> = {};
 
   // Anthropic thinking config. A zero budget asks for no extended thinking at
@@ -68,6 +83,7 @@ export function buildAgentOptions(tier: TierConfig, tierName = tier.model): Reco
     warnAgentOptionsEffortOnce(
       `thinking-zero:${tierName}`,
       `tier ${tierName}: thinking.budgetTokens: 0 is ignored`,
+      logger,
     );
   }
 
@@ -96,6 +112,7 @@ export function buildAgentOptions(tier: TierConfig, tierName = tier.model): Reco
         warnAgentOptionsEffortOnce(
           `anthropic-conflict:${tierName}`,
           `tier ${tierName}: both thinking and effort set; explicit thinking wins`,
+          logger,
         );
       } else {
         opts.effort = effort;
@@ -105,11 +122,13 @@ export function buildAgentOptions(tier: TierConfig, tierName = tier.model): Reco
         warnAgentOptionsEffortOnce(
           `openai-conflict:${tierName}`,
           `tier ${tierName}: both reasoning.effort and effort set; explicit reasoning wins`,
+          logger,
         );
       } else if (effort === "xhigh" || effort === "max") {
         warnAgentOptionsEffortOnce(
           `openai-downgrade:${tierName}:${effort}`,
           `tier ${tierName}: downgrading effort '${effort}' to 'high' because OpenAI reasoning_effort only supports low, medium, or high`,
+          logger,
         );
         opts.reasoning_effort = "high";
       } else {
@@ -119,6 +138,7 @@ export function buildAgentOptions(tier: TierConfig, tierName = tier.model): Reco
       warnAgentOptionsEffortOnce(
         `unknown-provider:${tierName}`,
         `tier ${tierName}: effort ignored for unknown provider family '${tier.model}'`,
+        logger,
       );
     }
   }
