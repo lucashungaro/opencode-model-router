@@ -309,3 +309,83 @@ describe("router-command — model catalog", () => {
     expect(out.parts[0].text).toContain("Model catalog unavailable");
   });
 });
+
+// The reported symptom was a warning painted over the TUI. console output from
+// a plugin goes to the server's stderr, which the terminal does not own; the
+// /log endpoint is the channel that does not.
+describe("router-command — passive warnings go to opencode's log", () => {
+  let savedHome: string | undefined;
+  let savedUserProfile: string | undefined;
+  let testHomeDir: string;
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  const ctxWithLog = (logged: unknown[]) => ({
+    directory: ".",
+    client: {
+      app: {
+        log: async (req: unknown) => {
+          logged.push(req);
+        },
+      },
+      config: {
+        providers: async () => ({
+          data: {
+            providers: [
+              {
+                id: "anthropic",
+                name: "Anthropic",
+                models: {
+                  "claude-haiku-4-5": { id: "claude-haiku-4-5", status: "active" },
+                },
+              },
+            ],
+            default: { anthropic: "claude-haiku-4-5" },
+          },
+        }),
+      },
+    },
+  });
+
+  beforeEach(() => {
+    testHomeDir = join(tmpdir(), `oc-mr-log-${Date.now()}`);
+    mkdirSync(testHomeDir, { recursive: true });
+    savedHome = process.env.HOME;
+    savedUserProfile = process.env.USERPROFILE;
+    process.env.HOME = testHomeDir;
+    process.env.USERPROFILE = testHomeDir;
+    invalidateConfigCache();
+  });
+
+  afterEach(() => {
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = savedUserProfile;
+    invalidateConfigCache();
+  });
+
+  it("routes stale-model warnings to app.log and leaves the console alone", async () => {
+    const logged: any[] = [];
+    const h: any = await ModelRouterPlugin(ctxWithLog(logged) as any);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await h["chat.message"]({ sessionID: "s1" }, { parts: [] });
+      await flush();
+      await h["chat.message"]({ sessionID: "s1" }, { parts: [] });
+      await flush();
+
+      expect(logged.length).toBeGreaterThan(0);
+      const entry = logged[0].body;
+      expect(entry.service).toBe("model-router");
+      expect(entry.level).toBe("warn");
+      expect(entry.message).toContain("model-missing");
+      // the service tag replaces the old inline prefix
+      expect(entry.message).not.toContain("[model-router]");
+      // nothing reached stderr, which is the whole point
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

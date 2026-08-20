@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Passive warnings go to opencode's log instead of the terminal.** `console.warn`
+  from a plugin lands on the server's stderr, which the TUI does not own, so a warning
+  painted over whatever the terminal was drawing. Stale-model, orphaned-pattern and
+  agent-option warnings now post to `POST /log` via `client.app.log` with a
+  `model-router` service tag and structured `extra`. Fire-and-forget and fail-soft: a
+  server without the endpoint, a rejected post, a post that resolves reporting an error,
+  and a synchronous throw all fall back to `console.warn`, so a diagnostic is never
+  silently dropped. Config-parse warnings still use `console.warn`: they are emitted
+  from `loadConfig`, which runs before a client exists, and only fire on a malformed
+  override file.
 - **Orphaned strong-model patterns are only reported when they concern a model the
   active preset actually uses.** The evidence gate accepted a near-miss anywhere in the
   catalog. Because github-copilot serves `claude-opus-4.8`, the default `opus-4-8`

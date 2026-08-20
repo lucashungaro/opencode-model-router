@@ -46,6 +46,7 @@ import {
   assembleSystemPrompt,
 } from "./router/protocol";
 import { resolveEnforcementMode } from "./router/enforcement";
+import { createPluginLogger } from "./router/logger";
 import {
   findOrphanedStrongPatterns,
   findStrongPatternNearMisses,
@@ -270,6 +271,11 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   // subagent tracking, cap enforcement, and narration detection for the
   // current plugin lifetime (i.e., until OpenCode is restarted).
   let bypassed = false;
+
+  // Passive warnings go to opencode's log rather than stderr: console output
+  // from a plugin paints over the TUI. Falls back to console when the server
+  // has no /log endpoint. See src/router/logger.ts.
+  const logger = createPluginLogger(ctx.client);
 
   // Fetch and normalize opencode's live provider/model catalog. Best-effort:
   // returns null when the client call fails, e.g. the server is not ready yet.
@@ -733,8 +739,9 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                   near.length > 0
                     ? ` — served under a different separator: ${near.slice(0, 3).join(", ")}`
                     : "";
-                console.warn(
-                  `[model-router] strong-model pattern '${p}' matches no model your providers serve — may silently change prompt-style resolution for tiers on auto${hint}`,
+                logger.warn(
+                  `strong-model pattern '${p}' matches no model your providers serve — may silently change prompt-style resolution for tiers on auto${hint}`,
+                  { pattern: p, nearMisses: near },
                 );
               }
               for (const it of validateModels(cfg, catalog)) {
@@ -747,9 +754,12 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
                   it.scope === "fallback"
                     ? `${it.tier}[${it.providerId}]`
                     : `@${it.tier}`;
-                console.warn(
-                  `[model-router] ${where} ${it.ref}: ${it.kind}${hint}`,
-                );
+                logger.warn(`${where} ${it.ref}: ${it.kind}${hint}`, {
+                  tier: it.tier,
+                  ref: it.ref,
+                  kind: it.kind,
+                  suggestions: it.suggestions,
+                });
               }
             }
           }
@@ -1025,7 +1035,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         }
 
         // Apply provider-specific options
-        const opts = buildAgentOptions(tier, name);
+        const opts = buildAgentOptions(tier, name, logger);
         if (Object.keys(opts).length > 0) {
           agentDef.options = opts;
         }
