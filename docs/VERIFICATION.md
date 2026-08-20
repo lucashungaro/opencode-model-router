@@ -32,7 +32,7 @@ When `MODEL_ROUTER_SMOKE_MODEL` is set, each smoke file therefore also writes th
 
 Two details that are easy to get wrong:
 
-- **`variant: ""` is deliberate.** The bundled `anthropic` preset sets `variant: "max"` on `medium`/`heavy`. The loader deep-merges, so siblings survive and keys cannot be deleted; `src/index.ts` applies `variant` behind a truthiness check, so an empty string is the only way to stop an Anthropic-only knob riding along to a non-Anthropic model.
+- **`variant: ""` is deliberate.** The bundled `anthropic` preset sets `variant: "high"` on `medium` and `variant: "max"` on `heavy`. The loader deep-merges, so siblings survive and keys cannot be deleted; `src/index.ts` applies `variant` behind a truthiness check, so an empty string is the only way to stop an Anthropic-only knob riding along to a non-Anthropic model.
 - **Lifecycle is leak-free.** Each file captures any pre-existing overrides content, writes its own, and restores-or-unlinks in a `finally` — mirroring how `layer2-gate.smoke.test.ts` already manages its temporary repo-root `opencode.json`. The logic is duplicated in both files rather than shared, deliberately: each runs as an independent live process and local reasoning beats cleverness here.
 
 `vitest.smoke.config.ts` sets `fileParallelism: false`. Two concurrent `opencode run` processes contend on the CLI's local SQLite state database and the loser exits 1 after ~0.7s with `Error: Unexpected error / database is locked`.
