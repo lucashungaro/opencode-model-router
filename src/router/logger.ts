@@ -11,8 +11,21 @@
  *
  * Fail-soft by contract. The call is fire-and-forget: a warning is never worth
  * blocking a hook on, and a logging failure must never surface as a plugin
- * error. When the endpoint is unavailable, or the client rejects, the message
- * falls back to console.warn so a diagnostic is never silently dropped.
+ * error. When the endpoint is unavailable, when the post rejects, and when it
+ * resolves reporting an error, the message falls back to console.warn so a
+ * diagnostic is never silently dropped.
+ *
+ * Two properties of the real SDK client shape this file, and getting either
+ * wrong degrades the feature silently rather than loudly:
+ *
+ *  1. `client.app` is a class instance (`App extends _HeyApiClient`) whose
+ *     methods read `this._client`. Detaching the method — `const log =
+ *     client.app.log` — leaves `this` undefined under ESM strict mode, so every
+ *     call throws and every warning quietly takes the console fallback. The
+ *     method is therefore always invoked with its receiver bound.
+ *  2. `App.log` defaults to `ThrowOnError = false`, so an HTTP failure RESOLVES
+ *     as `{ data: undefined, error }` instead of rejecting. A bare `.catch()`
+ *     sees nothing on a 400, so the settled value is inspected as well.
  */
 
 export interface PluginLogger {
@@ -25,18 +38,39 @@ export const LOG_SERVICE = "model-router";
 /** Prefix used only on the console fallback, where there is no service field. */
 const CONSOLE_PREFIX = `[${LOG_SERVICE}]`;
 
-type LogCapableClient = {
-  app?: {
-    log?: (req: {
-      body: {
-        service: string;
-        level: "debug" | "info" | "error" | "warn";
-        message: string;
-        extra?: Record<string, unknown>;
-      };
-    }) => unknown;
+type LogRequest = {
+  body: {
+    service: string;
+    level: "debug" | "info" | "error" | "warn";
+    message: string;
+    extra?: Record<string, unknown>;
   };
 };
+
+/**
+ * Structural view of the one method we use. Deliberately narrow: the plugin
+ * must keep working against a bare stub (every unit test hands it one) and
+ * against an older server with no `/log` at all, so the capability is probed at
+ * runtime rather than demanded by the type.
+ */
+type LogCapableClient = {
+  app?: {
+    log?: (req: LogRequest) => unknown;
+  };
+};
+
+/**
+ * The SDK resolves rather than rejects on an HTTP failure, reporting it as a
+ * populated `error` field on the settled value. Treat that as a failed post.
+ */
+function isErrorResult(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "error" in value &&
+    (value as { error?: unknown }).error !== undefined
+  );
+}
 
 /**
  * Build a logger over an opencode client. Falls back to the console when the
@@ -44,9 +78,10 @@ type LogCapableClient = {
  * the plugin a stub.
  */
 export function createPluginLogger(client?: unknown): PluginLogger {
-  const log = (client as LogCapableClient | undefined)?.app?.log;
+  const app = (client as LogCapableClient | undefined)?.app;
+  const log = app?.log;
 
-  if (typeof log !== "function") {
+  if (!app || typeof log !== "function") {
     return {
       warn(message) {
         console.warn(`${CONSOLE_PREFIX} ${message}`);
@@ -56,9 +91,12 @@ export function createPluginLogger(client?: unknown): PluginLogger {
 
   return {
     warn(message, extra) {
+      const toConsole = () => console.warn(`${CONSOLE_PREFIX} ${message}`);
       let result: unknown;
       try {
-        result = log({
+        // Bound to `app` on purpose — see (1) in the module comment. Calling
+        // the detached reference would throw on every real client.
+        result = log.call(app, {
           body: {
             service: LOG_SERVICE,
             level: "warn",
@@ -68,14 +106,17 @@ export function createPluginLogger(client?: unknown): PluginLogger {
         });
       } catch {
         // A synchronous throw means the transport is unusable; say it somewhere.
-        console.warn(`${CONSOLE_PREFIX} ${message}`);
+        toConsole();
         return;
       }
       // Fire-and-forget: never await, but never leave a rejection unhandled
-      // either, and do not lose the diagnostic when the post fails.
-      void Promise.resolve(result).catch(() => {
-        console.warn(`${CONSOLE_PREFIX} ${message}`);
-      });
+      // either, and do not lose the diagnostic when the post fails — whether it
+      // fails by rejecting or by resolving with an error. See (2) above.
+      void Promise.resolve(result)
+        .then((settled) => {
+          if (isErrorResult(settled)) toConsole();
+        })
+        .catch(toConsole);
     },
   };
 }

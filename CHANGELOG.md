@@ -14,8 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   painted over whatever the terminal was drawing. Stale-model, orphaned-pattern and
   agent-option warnings now post to `POST /log` via `client.app.log` with a
   `model-router` service tag and structured `extra`. Fire-and-forget and fail-soft: a
-  server without the endpoint, a rejected post or a synchronous throw all fall back to
-  `console.warn`, so a diagnostic is never silently dropped.
+  server without the endpoint, a rejected post, a post that resolves reporting an error,
+  and a synchronous throw all fall back to `console.warn`, so a diagnostic is never
+  silently dropped. Config-parse warnings still use `console.warn`: they are emitted
+  from `loadConfig`, which runs before a client exists, and only fire on a malformed
+  override file.
 
 ## [1.8.0] - 2026-08-19
 

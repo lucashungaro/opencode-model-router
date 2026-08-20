@@ -81,4 +81,46 @@ describe("createPluginLogger", () => {
     expect(() => createPluginLogger({ app: { log: () => undefined } }).warn("m")).not.toThrow();
     expect(warn).not.toHaveBeenCalled();
   });
+
+  // The real `client.app` is a class instance (`App extends _HeyApiClient`)
+  // whose methods read `this._client`. A plain-object stub cannot catch a lost
+  // receiver, because it never touches `this` — so mirror the SDK's shape. With
+  // a detached `const log = client.app.log`, this throws and silently degrades
+  // to the console fallback on every real install.
+  it("keeps the receiver bound, as the class-based SDK client requires", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const posted: LogReq[] = [];
+    class FakeApp {
+      _client = { post: (req: LogReq) => posted.push(req) };
+      log(req: LogReq) {
+        this._client.post(req);
+        return Promise.resolve({ data: {}, error: undefined });
+      }
+    }
+    createPluginLogger({ app: new FakeApp() }).warn("m");
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!.body.message).toBe("m");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  // App.log defaults to ThrowOnError = false, so a 400 RESOLVES as
+  // `{ data: undefined, error }` rather than rejecting. A bare .catch() sees
+  // nothing, and the diagnostic would be lost — which is the one thing the
+  // fallback exists to prevent.
+  it("falls back when the post resolves reporting an error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const log = () =>
+      Promise.resolve({ data: undefined, error: { message: "bad request" } });
+    createPluginLogger({ app: { log } }).warn("m");
+    await flush();
+    expect(warn).toHaveBeenCalledWith(`[${LOG_SERVICE}] m`);
+  });
+
+  it("stays quiet when the post resolves cleanly", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const log = () => Promise.resolve({ data: {}, error: undefined });
+    createPluginLogger({ app: { log } }).warn("m");
+    await flush();
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
