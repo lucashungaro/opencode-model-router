@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Passive warnings go to opencode's log instead of the terminal.** `console.warn`
+  from a plugin lands on the server's stderr, which the TUI does not own, so a warning
+  painted over whatever the terminal was drawing. Stale-model, orphaned-pattern and
+  agent-option warnings now post to `POST /log` via `client.app.log` with a
+  `model-router` service tag and structured `extra`. Fire-and-forget and fail-soft: a
+  server without the endpoint, a rejected post or a synchronous throw all fall back to
+  `console.warn`, so a diagnostic is never silently dropped.
+
 ## [1.8.0] - 2026-08-19
 
 Minor release: every vendor preset is refreshed to the current generation of models.
