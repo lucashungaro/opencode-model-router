@@ -65,7 +65,11 @@ export interface ModelGenerationsConfig {
 
 export const DEFAULT_CLAUDE5X_PATTERNS = ["claude-fable-5", "claude-mythos-5"];
 // NOTE: strong is a superset of claude5x by construction — editing DEFAULT_CLAUDE5X_PATTERNS also widens strong. Deliberate: every Claude 5.x model is a strong model.
-export const DEFAULT_STRONG_MODEL_PATTERNS = [...DEFAULT_CLAUDE5X_PATTERNS, "opus-4-8"];
+export const DEFAULT_STRONG_MODEL_PATTERNS = [
+  ...DEFAULT_CLAUDE5X_PATTERNS,
+  "opus-4-8",
+  "claude-opus-5",
+];
 
 export interface TierConfig {
   model: string;

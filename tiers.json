@@ -46,9 +46,9 @@
   "presets": {
     "anthropic": {
       "fast": {
-        "model": "anthropic/claude-haiku-4-5",
+        "model": "anthropic/claude-sonnet-5",
         "costRatio": 1,
-        "description": "Haiku 4.5 for exploration, search, and simple reads",
+        "description": "Sonnet 5 for exploration, search, and simple reads",
         "steps": 30,
         "whenToUse": [
           "Codebase exploration and search",
@@ -58,10 +58,11 @@
         ]
       },
       "medium": {
-        "model": "anthropic/claude-sonnet-4-6",
-        "variant": "max",
+        "model": "anthropic/claude-opus-5",
+        "variant": "high",
+        "effort": "high",
         "costRatio": 5,
-        "description": "Sonnet 4.6 max for implementation, refactoring, and tests",
+        "description": "Opus 5 high for implementation, refactoring, and tests",
         "steps": 50,
         "whenToUse": [
           "Feature implementation",
@@ -72,10 +73,10 @@
         ]
       },
       "heavy": {
-        "model": "anthropic/claude-opus-4-8",
+        "model": "anthropic/claude-fable-5",
         "variant": "max",
         "costRatio": 20,
-        "description": "Opus 4.8 max for architecture, complex debugging, and security",
+        "description": "Fable 5 max for architecture, complex debugging, and security",
         "steps": 120,
         "whenToUse": [
           "Architecture decisions",
@@ -87,9 +88,9 @@
     },
     "openai": {
       "fast": {
-        "model": "openai/gpt-5.4-mini-fast",
+        "model": "openai/gpt-5.6-luna-fast",
         "costRatio": 1,
-        "description": "GPT-5.4 Mini Fast for fast exploration and simple tasks",
+        "description": "GPT-5.6 Luna Fast for fast exploration and simple tasks",
         "steps": 30,
         "whenToUse": [
           "Codebase exploration and search",
@@ -98,10 +99,10 @@
         ]
       },
       "medium": {
-        "model": "openai/gpt-5.5-fast",
+        "model": "openai/gpt-5.6-terra-fast",
         "variant": "high",
         "costRatio": 5,
-        "description": "GPT-5.5 fast default settings for implementation and standard coding",
+        "description": "GPT-5.6 Terra Fast (high) for implementation and standard coding",
         "steps": 50,
         "whenToUse": [
           "Feature implementation",
@@ -111,10 +112,10 @@
         ]
       },
       "heavy": {
-        "model": "openai/gpt-5.5-fast",
+        "model": "openai/gpt-5.6-sol-fast",
         "variant": "xhigh",
         "costRatio": 20,
-        "description": "GPT-5.4 xhigh for architecture and complex tasks",
+        "description": "GPT-5.6 Sol Fast (xhigh) for architecture and complex tasks",
         "steps": 120,
         "whenToUse": [
           "Architecture decisions",
@@ -138,9 +139,9 @@
         ]
       },
       "medium": {
-        "model": "github-copilot/claude-sonnet-4.6",
+        "model": "github-copilot/claude-sonnet-5",
         "costRatio": 5,
-        "description": "Claude Sonnet 4.6 via GitHub Copilot for implementation, refactoring, and tests",
+        "description": "Claude Sonnet 5 via GitHub Copilot for implementation, refactoring, and tests",
         "steps": 50,
         "whenToUse": [
           "Feature implementation",
@@ -151,9 +152,9 @@
         ]
       },
       "heavy": {
-        "model": "github-copilot/claude-opus-4.6",
+        "model": "github-copilot/claude-fable-5",
         "costRatio": 20,
-        "description": "Claude Opus 4.6 via GitHub Copilot for architecture, complex debugging, and security",
+        "description": "Claude Fable 5 via GitHub Copilot for architecture, complex debugging, and security",
         "steps": 120,
         "whenToUse": [
           "Architecture decisions",
@@ -165,9 +166,9 @@
     },
     "google": {
       "fast": {
-        "model": "google/gemini-2.5-flash",
+        "model": "google/gemini-3.5-flash-lite",
         "costRatio": 1,
-        "description": "Gemini 2.5 Flash for fast exploration and simple tasks",
+        "description": "Gemini 3.5 Flash Lite for fast exploration and simple tasks",
         "steps": 30,
         "whenToUse": [
           "Codebase exploration and search",
@@ -177,9 +178,9 @@
         ]
       },
       "medium": {
-        "model": "google/gemini-2.5-pro",
+        "model": "google/gemini-3.7-flash",
         "costRatio": 5,
-        "description": "Gemini 2.5 Pro for implementation, refactoring, and tests",
+        "description": "Gemini 3.7 Flash for implementation, refactoring, and tests",
         "steps": 50,
         "whenToUse": [
           "Feature implementation",
@@ -190,9 +191,9 @@
         ]
       },
       "heavy": {
-        "model": "google/gemini-3-pro-preview",
+        "model": "google/gemini-3.1-pro-preview",
         "costRatio": 20,
-        "description": "Gemini 3 Pro Preview for architecture, complex debugging, and security",
+        "description": "Gemini 3.1 Pro Preview for architecture, complex debugging, and security",
         "steps": 120,
         "whenToUse": [
           "Architecture decisions",
@@ -216,10 +217,10 @@
         ]
       },
       "medium": {
-        "model": "openai/gpt-5.5-fast",
+        "model": "openai/gpt-5.6-terra-fast",
         "variant": "high",
         "costRatio": 5,
-        "description": "GPT-5.5 fast default settings for implementation and standard coding",
+        "description": "GPT-5.6 Terra Fast (high) for implementation and standard coding",
         "steps": 50,
         "whenToUse": [
           "Feature implementation",
@@ -229,10 +230,10 @@
         ]
       },
       "heavy": {
-        "model": "anthropic/claude-opus-4-8",
+        "model": "anthropic/claude-opus-5",
         "variant": "max",
         "costRatio": 20,
-        "description": "Claude Opus 4.8 max for architecture, complex debugging, and security",
+        "description": "Claude Opus 5 max for architecture, complex debugging, and security",
         "steps": 120,
         "whenToUse": [
           "Architecture decisions",

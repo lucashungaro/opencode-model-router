@@ -22,7 +22,7 @@ dispatching the right tier, not by you becoming the explorer.
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x).
+Preset: anthropic. Tiers: @fast=claude-sonnet-5(1x) @medium=claude-opus-5/high(5x) @heavy=claude-fable-5/max(20x).
 
 If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
 
@@ -81,7 +81,7 @@ dispatching the right tier, not by you becoming the explorer.
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x).
+Preset: anthropic. Tiers: @fast=claude-sonnet-5(1x) @medium=claude-opus-5/high(5x) @heavy=claude-fable-5/max(20x).
 
 If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
 
@@ -105,7 +105,7 @@ exports[`assembled-prompt golden > assembled-prompt-anthropic-model-openai > ass
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x).
+Preset: anthropic. Tiers: @fast=claude-sonnet-5(1x) @medium=claude-opus-5/high(5x) @heavy=claude-fable-5/max(20x).
 
 If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
 
@@ -129,7 +129,7 @@ exports[`assembled-prompt golden > assembled-prompt-anthropic-model-undefined > 
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: anthropic. Tiers: @fast=claude-haiku-4-5(1x) @medium=claude-sonnet-4-6/max(5x) @heavy=claude-opus-4-8/max(20x).
+Preset: anthropic. Tiers: @fast=claude-sonnet-5(1x) @medium=claude-opus-5/high(5x) @heavy=claude-fable-5/max(20x).
 
 If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
 
@@ -153,7 +153,7 @@ exports[`assembled-prompt golden > assembled-prompt-openai-enforcement-on > asse
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: openai. Tiers: @fast=gpt-5.4-mini-fast(1x) @medium=gpt-5.5-fast/high(5x) @heavy=gpt-5.5-fast/xhigh(20x).
+Preset: openai. Tiers: @fast=gpt-5.6-luna-fast(1x) @medium=gpt-5.6-terra-fast/high(5x) @heavy=gpt-5.6-sol-fast/xhigh(20x).
 
 If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
 
@@ -212,7 +212,7 @@ dispatching the right tier, not by you becoming the explorer.
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: openai. Tiers: @fast=gpt-5.4-mini-fast(1x) @medium=gpt-5.5-fast/high(5x) @heavy=gpt-5.5-fast/xhigh(20x).
+Preset: openai. Tiers: @fast=gpt-5.6-luna-fast(1x) @medium=gpt-5.6-terra-fast/high(5x) @heavy=gpt-5.6-sol-fast/xhigh(20x).
 
 If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
 
@@ -236,7 +236,7 @@ exports[`assembled-prompt golden > assembled-prompt-openai-model-openai > assemb
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: openai. Tiers: @fast=gpt-5.4-mini-fast(1x) @medium=gpt-5.5-fast/high(5x) @heavy=gpt-5.5-fast/xhigh(20x).
+Preset: openai. Tiers: @fast=gpt-5.6-luna-fast(1x) @medium=gpt-5.6-terra-fast/high(5x) @heavy=gpt-5.6-sol-fast/xhigh(20x).
 
 If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
 
@@ -260,7 +260,7 @@ exports[`assembled-prompt golden > assembled-prompt-openai-model-undefined > ass
 
 You are the orchestrator: route each task to the right tier and delegate it with \`Task(subagent_type="fast"|"medium"|"heavy", prompt="...")\`. Information-gathering (grep, read, glob, ls) is execution, so dispatch it to @fast rather than running it yourself; cap yourself at about 2 direct read-only calls per turn and dispatch @fast on the 3rd. Synthesize the subagents' results and answer the user yourself.
 
-Preset: openai. Tiers: @fast=gpt-5.4-mini-fast(1x) @medium=gpt-5.5-fast/high(5x) @heavy=gpt-5.5-fast/xhigh(20x).
+Preset: openai. Tiers: @fast=gpt-5.6-luna-fast(1x) @medium=gpt-5.6-terra-fast/high(5x) @heavy=gpt-5.6-sol-fast/xhigh(20x).
 
 If you ARE @heavy, handle heavy-tier work yourself: never self-call @heavy.
 
